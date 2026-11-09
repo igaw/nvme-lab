@@ -11,14 +11,20 @@
 # static eth0 for QEMU's user networking, as on a Debian server. The
 # packages of Debian's nvme-cli (2.13) and lvm2 are in the image, not
 # installed, under /var/cache/lab-debs/{nvme-cli,lvm2}: guest-image.sh
-# installs them for a case that wants them. Does nothing when
-# DIR/base.qcow2 exists; remove DIR to build it again.
+# installs them for a case that wants them. So are Debian's dracut and
+# dracut-network (and jq, which its nvmf module needs), for the hand-over cases (guest-root.sh), whose root is
+# on NVMe/TCP. Does nothing when DIR/base.qcow2 of this revision exists
+# (REV in DIR/version); remove DIR to build it again.
 set -eu
 
 [ $# -eq 1 ] || { echo "usage: $0 DIR" >&2; exit 2; }
 DIR=$1
 IMAGE=ghcr.io/linux-nvme/debian:latest
-[ -f "$DIR/base.qcow2" ] && exit 0
+# Bump when the image changes
+REV=4
+[ -f "$DIR/base.qcow2" ] && grep -qx "rev $REV" "$DIR/version" 2>/dev/null \
+    && exit 0
+rm -f "$DIR/base.qcow2"
 
 # The runtime libraries an nvme-cli tree built in the CI image may link
 PACKAGES="systemd-sysv udev dbus kmod ifupdown iproute2 iputils-ping \
@@ -46,20 +52,24 @@ docker run --rm --privileged --network host --ulimit nofile=1024:1024 \
     # Debian'"'"'s nvme-cli and lvm2, to install when a case wants them
     # The cache has the packages of debootstrap
     chroot "$R" apt-get clean
-    for p in nvme-cli lvm2; do
-        chroot "$R" apt-get -q -d install -y "$p" >/dev/null
-        mkdir -p "$R/var/cache/lab-debs/$p"
-        mv "$R"/var/cache/apt/archives/*.deb "$R/var/cache/lab-debs/$p/"
+    for p in nvme-cli lvm2 "dracut dracut-network jq"; do
+        # shellcheck disable=SC2086 # p is a list of packages
+        chroot "$R" apt-get -q -d install -y --no-install-recommends $p \
+            >/dev/null
+        d=$R/var/cache/lab-debs/${p%% *}
+        mkdir -p "$d"
+        mv "$R"/var/cache/apt/archives/*.deb "$d/"
     done
     chroot "$R" apt-get clean
     {
+        echo "rev $2"
         echo "kernel $(ls "$R/lib/modules")"
         for d in "$R"/var/cache/lab-debs/*/*.deb; do
             echo "deb ${d##*/}"
         done
     } > /work/version
     # The host owns the result
-    ' guest "$PACKAGES"
+    ' guest "$PACKAGES" "$REV"
 
 ROOT=$DIR/tmp/root
 cp -L "$ROOT/vmlinuz" "$DIR/vmlinuz"

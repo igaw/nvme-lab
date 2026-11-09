@@ -1,0 +1,13 @@
+# The same with two paths to the root (native multipath). The kernel
+# gives the second path up (its controller is deleted, as after FC's
+# dev_loss_tmo): nvme-discoverd connects it again as pre-os, the root
+# stays on the first path. Then a restart and the shutdown.
+name = "hand-over of a multipath NVMe/TCP root, path lost, restart, shutdown"
+tags = ["handover", "guest", "pre-os", "multipath", "nvme-cli-3"]
+
+[guest]
+root = "nvme"
+paths = 2
+lose = true
+restart = true
+timeout = 480

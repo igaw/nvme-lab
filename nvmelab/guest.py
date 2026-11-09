@@ -27,6 +27,7 @@ The pieces, in boot/:
 
 import shlex
 import subprocess
+from pathlib import Path
 
 from . import remote, sync
 from .config import ConfigError
@@ -55,7 +56,9 @@ def major(tree, s):
 
 
 def flavor(s):
-    return 'discoverd' if s.guest.get('connect') == 'discoverd' else 'legacy'
+    if s.guest.get('root') == 'nvme' or s.guest.get('connect') == 'discoverd':
+        return 'discoverd'
+    return 'legacy'
 
 
 def config_file(s, tree):
@@ -89,12 +92,14 @@ def stage_dir(tree, kind):
     return f'{sync.scratch_dir(sync.check_name(tree))}/.lab-debian-{kind}-stage'
 
 
-def run(cfg, host, s, tree, slot, env, name, out):
+def run(cfg, host, s, tree, slot, env, name, out, module=None):
     """Make the disk of shutdown case NAME (scenario S, TREE) and boot it
     in SLOT; write the output to OUT. Returns guest-boot.sh's exit
     status (2: could not be set up)."""
     from .boot import exec_argv
     g = s.guest
+    if g.get('root') == 'nvme':
+        return run_handover(cfg, host, s, tree, slot, env, name, out, module)
     target = f"{env.traddr}:{env.trsvcid('extra')}"
     outdir = f'{BOOT_DIR}/out/{sync.check_name(name)}'
     image = ['sh', f'{scripts_dir(slot)}/guest-image.sh',
@@ -172,3 +177,201 @@ def verdict(s, facts):
     if want == 'fail':
         return [] if problems else ['the shutdown worked, expected it not to']
     return problems
+
+
+def run_handover(cfg, host, s, tree, slot, env, name, out, module):
+    """Make the root of hand-over case NAME (scenario S, TREE, dracut's
+    nvmf MODULE, a local directory) and boot it from the root subsystem
+    of SLOT; write the output to OUT. Returns guest-handover.sh's exit
+    status (2: could not be set up)."""
+    from .boot import ROOT_UUID, exec_argv
+    g = s.guest
+    if tree.package or not tree.name:
+        raise ConfigError('a hand-over case needs an nvme-cli tree (--nvme)')
+    if not module:
+        raise ConfigError('a hand-over case needs --dracut-module')
+    paths = g.get('paths', 1)
+    outdir = f'{BOOT_DIR}/out/{sync.check_name(name)}'
+    tree_dir = dracut_tree(module)
+    src = f'{BOOT_DIR}/dracut/{sync.check_name(name)}'
+    upload_tracked(cfg, host, tree_dir, src)
+    built = remote.run(cfg, host, dracut_build_argv(slot, name),
+                       capture_output=True, encoding='utf-8',
+                       errors='replace')
+    if built.returncode:
+        out.write(f'building dracut of {tree_dir} failed:\n'
+                  f'{built.stdout[-2000:]}{built.stderr[-2000:]}')
+        return 2
+    image = ['sh', f'{scripts_dir(slot)}/guest-root.sh',
+             '--base', GUEST_DIR, '--out', outdir, '--nbd', str(slot.n - 1),
+             '--hostnqn', slot.host_nqn, '--hostid', slot.host_id,
+             '--nvme', stage_dir(tree.name, 'discoverd'),
+             '--dracut', f'{src}/.lab-debian-stage',
+             '--uptime', str(g.get('uptime', 5))]
+    if g.get('lose'):
+        last = 'root2' if paths > 1 else 'root'
+        image += ['--lose-trsvcid', env.trsvcid(last)]
+    if g.get('restart'):
+        image.append('--restart')
+    done = remote.run(cfg, host, image)
+    if done.returncode:
+        log = remote.run(cfg, host, f'tail -20 {shlex.quote(outdir)}/log',
+                         capture_output=True, encoding='utf-8',
+                         errors='replace')
+        out.write(log.stdout)
+        return 2
+    args = ['--name', name, '--target',
+            f"{env.traddr}:{env.trsvcid('root')}", '--nqn', slot.root_nqn,
+            '--root-uuid', ROOT_UUID,
+            '--timeout', str(g.get('timeout', TIMEOUT)),
+            '--slot', str(slot.n)]
+    if paths > 1:
+        args += ['--path2', env.trsvcid('root2')]
+    done = remote.run(cfg, host, exec_argv(slot, 'guest-handover.sh', *args),
+                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                      encoding='utf-8', errors='replace')
+    out.write(done.stdout)
+    return done.returncode
+
+
+def parse_handover(text):
+    """guest-handover.sh's state.txt: {key: value} of its facts, the
+    lists of its error, event and removed lines, and {phase: {kind:
+    [words]}} of the guest's reports."""
+    facts = {'error': [], 'event': [], 'removed': [], 'phases': {}}
+    for line in text.splitlines():
+        key, _, value = line.partition(' ')
+        if key == 'phase':
+            phase, _, rest = value.partition(' ')
+            kind, _, words = rest.partition(' ')
+            facts['phases'].setdefault(phase, {}).setdefault(
+                kind, []).append(words.split())
+        elif key in ('error', 'event', 'removed'):
+            facts[key].append(value)
+        elif key:
+            facts[key] = value
+    return facts
+
+
+def _kv(words):
+    return dict(w.split('=', 1) for w in words if '=' in w)
+
+
+def handover_verdict(s, facts, root_nqn):
+    """What is wrong with the run of hand-over scenario S (empty:
+    nothing). FACTS: parse_handover(); ROOT_NQN: the slot's root."""
+    g = s.guest
+    problems = []
+    if facts.get('booted') != 'yes':
+        return ['the guest did not boot from NVMe/TCP into its report']
+    paths = g.get('paths', 1)
+    names = {}
+    for phase in ('boot', 'lost', 'restart'):
+        if phase == 'lost' and not g.get('lose') or \
+                phase == 'restart' and not g.get('restart'):
+            continue
+        rep = facts['phases'].get(phase)
+        if not rep:
+            problems.append(f'{phase}: no report')
+            continue
+        root = [w for w in rep.get('ctrl', []) if len(w) > 2 and
+                w[2] == root_nqn]
+        names[phase] = sorted(w[0] for w in root)
+        if len(root) != paths:
+            problems.append(f'{phase}: {len(root)} controllers of the root, '
+                            f'expected {paths}')
+        for w in root:
+            kv = _kv(w)
+            if kv.get('owner') != 'pre-os':
+                problems.append(f"{phase}: {w[0]} owner '{kv.get('owner')}', "
+                                'expected pre-os')
+            if kv.get('ctrl_loss_tmo') != 'off':
+                problems.append(f"{phase}: {w[0]} ctrl_loss_tmo "
+                                f"'{kv.get('ctrl_loss_tmo')}', expected off")
+        for w in rep.get('unit', []):
+            kv = _kv(w)
+            if root_nqn in ' '.join(w) and kv.get('execstop') != 'no':
+                problems.append(f'{phase}: unit {w[0]} of the root '
+                                'disconnects on stop')
+        if not rep.get('preos'):
+            problems.append(f'{phase}: nothing in pre-os.conf')
+        svc = {w[0]: w[1] for w in rep.get('service', []) if len(w) > 1}
+        if svc.get('nvme-discoverd') != 'active':
+            problems.append(f"{phase}: nvme-discoverd is "
+                            f"{svc.get('nvme-discoverd')}")
+        if phase == 'boot' and rep.get('need_shutdown') != [['yes']]:
+            problems.append('boot: the initrd did not ask for the shutdown '
+                            'initramfs (need_shutdown)')
+    if 'restart' in names and 'lost' in names and \
+            names['restart'] != names['lost']:
+        problems.append(f"restart: the root's controllers changed from "
+                        f"{names['lost']} to {names['restart']}")
+    elif 'restart' in names and names['restart'] != names.get('boot'):
+        if 'lost' not in names:
+            problems.append(f"restart: the root's controllers changed "
+                            f"from {names['boot']} to {names['restart']}")
+    # The shutdown
+    limit = g.get('shutdown_limit', SHUTDOWN_LIMIT)
+    if facts.get('poweroff') != 'yes':
+        problems.append('the guest did not run systemctl poweroff')
+    elif facts.get('powered_off') != 'yes':
+        problems.append('no power-off: QEMU was killed after '
+                        f"{g.get('timeout', TIMEOUT)}s")
+    elif int(facts.get('shutdown_seconds', '0')) > limit:
+        problems.append(f"the power-off took {facts['shutdown_seconds']}s, "
+                        f'more than {limit}s')
+    umount, disc = facts.get('root_umount', '-'), \
+        facts.get('pre_os_disconnect', '-')
+    if disc == '-':
+        problems.append('the shutdown initramfs disconnected no pre-OS '
+                        'controller')
+    elif umount == '-':
+        problems.append('the root was not unmounted before its controllers '
+                        'were disconnected')
+    elif float(disc) < float(umount):
+        problems.append(f'the pre-OS controllers were disconnected at '
+                        f'{disc}, before the root was unmounted at {umount}')
+    early = [r for r in facts['removed']
+             if umount != '-' and float(r.split()[0]) < float(umount)]
+    for r in early[:2]:
+        problems.append(f'a controller was removed before the root was '
+                        f'unmounted: {r}')
+    for line in facts['error'][:3]:
+        problems.append(f'console: {line}')
+    if len(facts['error']) > 3:
+        problems.append(f"and {len(facts['error']) - 3} more such lines")
+    return problems
+
+
+def dracut_tree(module):
+    """The dracut tree of the nvmf module directory MODULE
+    (TREE/modules.d/74nvmf): a module is tested with its own dracut."""
+    tree = Path(module).resolve().parent.parent
+    if not (tree / 'dracut.sh').is_file():
+        raise ConfigError(f'{module} is not in a dracut tree: a hand-over '
+                          'case builds the dracut of the module')
+    return tree
+
+
+def upload_tracked(cfg, host, tree, dest):
+    """Copy the files git tracks in TREE (with their changes in the work
+    tree) to DEST on HOST."""
+    from .boot import upload_argv
+    files = subprocess.run(['git', '-C', str(tree), 'ls-files', '-z'],
+                           check=True, capture_output=True).stdout
+    tar = subprocess.Popen(['tar', '-C', str(tree), '--null', '-T', '-',
+                            '-cf', '-'], stdin=subprocess.PIPE,
+                           stdout=subprocess.PIPE)
+    ssh = subprocess.Popen(upload_argv(cfg, host, dest), stdin=tar.stdout)
+    tar.stdout.close()
+    tar.communicate(files)
+    if ssh.wait() or tar.returncode:
+        raise ConfigError(f'copying {tree} to {host.name} failed')
+
+
+def dracut_build_argv(slot, name):
+    """Build the dracut tree of case NAME in the Debian CI image."""
+    script = f'{CONTAINER_DIR}/slot-{slot.n}/scripts/dracut-build.sh'
+    return ['docker', 'run', '--rm', '--network', 'host', '-v',
+            '/root/scratch:/scratch', BUILD_IMAGE, 'sh', script,
+            f'/scratch/lab-boot/dracut/{sync.check_name(name)}']

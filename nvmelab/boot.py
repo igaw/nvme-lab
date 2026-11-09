@@ -440,7 +440,8 @@ def test_one(cfg, host, s, tree, slot, name, out, **options):
     print(f'--- {s.id}{label}: {s.name} (slot {slot.n})', file=out,
           flush=True)
     if s.guest is not None:
-        return test_guest(cfg, host, s, tree, slot, env, name, out, label)
+        return test_guest(cfg, host, s, tree, slot, env, name, out, label,
+                          options.get('module'))
     rc = run(cfg, host, name, slot=slot, out=out, tree=tree.name,
              package=tree.package, **options,
              **scenario.run_options(s, env))
@@ -470,13 +471,21 @@ def test_one(cfg, host, s, tree, slot, name, out, **options):
     return result, bad, errors
 
 
-def test_guest(cfg, host, s, tree, slot, env, name, out, label):
-    """test_one() of a shutdown scenario (guest.py)."""
-    rc = guest.run(cfg, host, s, tree, slot, env, name, out)
+def test_guest(cfg, host, s, tree, slot, env, name, out, label,
+               module=None):
+    """test_one() of a shutdown or hand-over scenario (guest.py)."""
+    rc = guest.run(cfg, host, s, tree, slot, env, name, out, module)
+    handover = s.guest.get('root') == 'nvme'
     if rc not in (0, 1):
         errors = [f'could not be set up (exit {rc}), see '
                   f'{BOOT_DIR}/out/{name}/log']
         facts = {}
+    elif handover:
+        facts = guest.parse_handover(read_state(cfg, host, name))
+        facts['order'] = (f"umount={facts.get('root_umount', '-')} "
+                          f"pre-os-disconnect="
+                          f"{facts.get('pre_os_disconnect', '-')}")
+        errors = guest.handover_verdict(s, facts, slot.root_nqn)
     else:
         facts = guest.parse_state(read_state(cfg, host, name))
         errors = guest.verdict(s, facts)

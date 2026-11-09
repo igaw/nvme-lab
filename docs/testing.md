@@ -357,7 +357,7 @@ Tags say what a scenario is about or needs: `cmdline`, `static`,
 `legacy`, `nbft`, `multipath`, `fault`, `hostnqn`, `pre-os` (the pre-OS
 model of nvme-cli#4328: every connection of the initrd has the owner
 `pre-os` and `ctrl_loss_tmo` off, and is recorded in `pre-os.conf`;
-needs an nvme-cli with it), `shutdown`, `guest`, and
+needs an nvme-cli with it), `handover`, `shutdown`, `guest`, and
 `nvme-cli-2` /
 `nvme-cli-3`: a scenario with one of these runs only with trees of that
 major version. Each scenario gets a PASS, FAIL, XFAIL or XPASS line with
@@ -374,7 +374,8 @@ discovery descriptor, `rd.nvmf.nonbft`, nvme-cli 2 without a registry,
 and the registry owners and `ctrl_loss_tmo` of the pre-OS connections.
 What nvme-discoverd does after switch-root (adoption, reconnects)
 needs the OS, which the busybox root doesn't run: nvme-cli's mock
-scenarios cover that; the OS shutdown with a data mount has its own
+scenarios and the hand-over scenarios cover that; the OS shutdown with
+a data mount has its own
 scenarios (below).
 
 #### Shutdown (Debian guest, nvme-cli#3309)
@@ -451,6 +452,50 @@ releases, Debian's package and `suite-master` (`xfail_on`, which names a
 tree by its release tag, its name or `package`). A mount without
 `_netdev` is not supported: with the fixes it connects, and the
 disconnect runs before the unmount.
+
+#### Hand-over (a Debian root on NVMe-oF, nvme-cli#4328)
+
+The hand-over scenarios (`boot/scenarios/handover-*.toml`, tag
+`handover`, `root` in `[guest]`) put the Debian guest's root on NVMe-oF
+and boot it through dracut, with nvme-discoverd in the real root: the
+pre-OS model of nvme-cli#4328 end to end, on a real kernel and systemd.
+
+```
+lab boot test -j 3 --tag handover --nvme TREE \
+    --dracut-module ~/dracut/modules.d/74nvmf
+```
+
+- `root = "nvme"`: the root is on the slot's root subsystem (one or two
+  paths, `paths`), booted from the command line (`rd.nvmf.discover=`).
+  The root subsystem gets the guest's root for the case and the busybox
+  root back afterwards.
+
+A case builds the dracut tree of `--dracut-module` (the module is
+tested with its own dracut: dracut-ng's nvmf module needs its
+`initqueue` module, which Debian's dracut 106 lacks) in nvme-cli's
+Debian CI image (`boot/dracut-build.sh`, the tracked files of the tree
+with its changes), and the tree's nvme-cli with nvme-discoverd.
+`boot/guest-root.sh` installs both into the guest over Debian's dracut
+packages, builds the initrd in the guest's root (`/boot/initrd.img-KVER`,
+where `dracut-shutdown.service` finds it), and leaves `eth0` to the
+initrd (`manual`), as a root on the network wants.
+
+The guest reports after the boot, after `lose` (the controller of the
+last path is deleted, as when the kernel gives a path up) and after
+`restart` (nvme-discoverd), then powers off. `state.txt`: `booted`,
+`phase PHASE ...` (the report: `ctrl` with owner and `ctrl_loss_tmo`,
+`preos` lines of `pre-os.conf`, nvme-discoverd's `unit`s with whether
+they have an `ExecStop=`, `service`s, `need_shutdown`), `poweroff`,
+`powered_off`, `shutdown_seconds`, `root_umount`, `pre_os_disconnect`
+(the first controller removal after the root's unmount, when dracut's
+shutdown hook ran), `removed`, `error` and `event` lines.
+
+A case passes when the root's controllers have the owner `pre-os` and
+`ctrl_loss_tmo` off in every phase, their units have no `ExecStop=`,
+`pre-os.conf` names the connections, the lost path comes back, a
+restart changes nothing, and the shutdown initramfs disconnects them
+after the root is unmounted, cleanly and in time. Both pass with
+nvme-cli branch `pre-os-owner` and dracut branch `nvmf-pre-os-owner`.
 
 #### Dashboard
 

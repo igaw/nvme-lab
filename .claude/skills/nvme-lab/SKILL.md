@@ -103,6 +103,12 @@ test"; read it before a run that isn't one of these:
   Debian 13 guest with systemd and ifupdown (docs, "Shutdown").
   `--nvme-package` means Debian's 2.13 there. Results as above, plus
   `state.txt` with the shutdown order and the bad console lines.
+- Hand-over of a root on NVMe-oF to nvme-discoverd (nvme-cli#4328):
+  `lab boot test --tag handover --nvme TREE --dracut-module
+  DIR/modules.d/74nvmf`; builds that dracut tree for the Debian guest,
+  roots on NVMe/TCP (one or two paths),
+  checks owners, a lost path, a restart and the shutdown initramfs
+  disconnect (docs, "Hand-over").
 - Faults: `port-removed` and `ana:STATE` on the target
   (nvme-target-control from ~/blktests), `tcp-refuse`/`tcp-drop` on the
   CI host (nvmf-failover from ~/nvmf-failover, nftables); always put

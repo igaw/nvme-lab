@@ -83,6 +83,27 @@ It passes when the guest mounted the file system and powered off within
 shutdown_limit, without a sign of a broken shutdown on the console (see
 guest.BAD_SIGNS). [boot], [[fault]] and the [expect] keys other than
 result don't apply to it.
+
+With root = "nvme", it is a hand-over scenario (nvme-cli#4328): the
+guest's root is on the slot's NVMe/TCP root subsystem, booted through
+Debian's dracut with the nvmf module under test (--dracut-module), and
+nvme-discoverd takes the pre-OS connections over:
+
+    [guest]
+    root = "nvme"
+    paths = 2                   # the root's paths (root, root2)
+    lose = true                 # delete the last path's controller, as
+                                # the kernel gives a path up; it must
+                                # come back as pre-os
+    restart = true              # restart nvme-discoverd
+    shutdown_limit = 60
+
+It passes when every controller of the root has the owner pre-os and
+ctrl_loss_tmo off after the boot, the loss and the restart, its
+connection units never disconnect it (no ExecStop=), pre-os.conf names
+the connections, a restart changes nothing, and the shutdown unmounts
+the root before the initramfs disconnects its controllers, in time and
+without a sign of a broken shutdown.
 """
 
 import tomllib
@@ -103,7 +124,9 @@ EXPECT_KEYS = {'result': str, 'controllers': list, 'paths': dict,
 FAULT_KEYS = {'kind': str, 'path': str, 'state': str}
 GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
               'wait_online': bool, 'modules_load': bool, 'dirty_mb': int,
-              'uptime': int, 'shutdown_limit': int, 'timeout': int}
+              'uptime': int, 'shutdown_limit': int, 'timeout': int,
+              'root': str, 'paths': int, 'lose': bool, 'restart': bool}
+GUEST_ROOT = ('local', 'nvme')
 GUEST_CONNECT = ('autoconnect', 'discoverd')
 GUEST_CONFIG = ('discovery.conf', 'nvme-fabrics.conf')
 TOP_KEYS = {'name', 'tags', 'xfail', 'xfail_on', 'boot', 'fault', 'expect',
@@ -164,6 +187,13 @@ def load(path):
         if s.guest.get('connect', 'autoconnect') not in GUEST_CONNECT:
             raise ConfigError(f"{path}: guest.connect must be one of "
                               f"{', '.join(GUEST_CONNECT)}")
+        if s.guest.get('root', 'local') not in GUEST_ROOT:
+            raise ConfigError(f"{path}: guest.root must be one of "
+                              f"{', '.join(GUEST_ROOT)}")
+        if s.guest.get('root') == 'nvme' and \
+                s.guest.get('connect', 'discoverd') != 'discoverd':
+            raise ConfigError(f'{path}: a root on NVMe/TCP is handed over '
+                              'to nvme-discoverd (guest.connect)')
         if s.guest.get('config', GUEST_CONFIG[0]) not in GUEST_CONFIG:
             raise ConfigError(f"{path}: guest.config must be one of "
                               f"{', '.join(GUEST_CONFIG)}")

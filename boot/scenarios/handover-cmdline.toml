@@ -1,0 +1,13 @@
+# nvme-cli#4328, end to end: a Debian root on NVMe/TCP, booted through
+# Debian's dracut with the nvmf module under test (rd.nvmf.discover=).
+# The initrd connects as the owner pre-os; nvme-discoverd takes the root
+# over without owning it, a restart changes nothing, and the shutdown
+# initramfs disconnects the root's controller after the root is
+# unmounted.
+name = "hand-over of an NVMe/TCP root to nvme-discoverd, restart, shutdown"
+tags = ["handover", "guest", "pre-os", "nvme-cli-3"]
+
+[guest]
+root = "nvme"
+restart = true
+timeout = 420
