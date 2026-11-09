@@ -1,0 +1,8 @@
+# nvme-cli#3309: the same with _netdev, which orders the unmount before
+# network-online.target stops.
+name = "shutdown with an NVMe/TCP mount (nofail,_netdev), autoconnect"
+tags = ["shutdown", "guest"]
+
+[guest]
+connect = "autoconnect"
+fstab = "nofail,_netdev"

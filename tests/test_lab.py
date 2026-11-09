@@ -13,7 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from nvmelab import (boot, ci, cli, config, dashboard, faults,  # noqa: E402,E501
+from nvmelab import (boot, ci, cli, config, dashboard, faults, guest,  # noqa: E402,E501
                      inventory, nbft, parity, remote, scenario, slots,
                      sync, target)
 from nvmelab.config import ConfigError  # noqa: E402
@@ -443,9 +443,10 @@ class BootTest(unittest.TestCase):
         quick = load('name = "q"\n')
         fault = load('[[fault]]\nkind = "tcp-drop"\npath = "root2"\n')
         failing = load('[expect]\nresult = "fail"\n')
-        order = sorted([quick, fault, failing], key=boot.expected_duration,
-                       reverse=True)
-        self.assertEqual(order, [failing, fault, quick])
+        shutdown = load('[guest]\n')
+        order = sorted([quick, fault, failing, shutdown],
+                       key=boot.expected_duration, reverse=True)
+        self.assertEqual(order, [shutdown, failing, fault, quick])
 
     def test_test_needs_slots(self):
         orig = boot.existing_slots
@@ -468,7 +469,9 @@ class BootTest(unittest.TestCase):
                          "tar -C '/root/scratch/lab-boot/x y' -xf -")
 
     def test_scripts_exist(self):
-        for script in ('container.sh', 'mkroot.sh', 'boot.sh'):
+        for script in ('container.sh', 'mkroot.sh', 'boot.sh',
+                       'guest-base.sh', 'guest-build.sh', 'guest-image.sh',
+                       'guest-boot.sh'):
             self.assertTrue((boot.SCRIPTS / script).is_file(), script)
 
 
@@ -646,6 +649,8 @@ class ScenarioTest(unittest.TestCase):
         self.assertTrue(scenarios)
         env = self.env()
         for s in scenarios:
+            if s.guest is not None:
+                continue
             with self.subTest(scenario=s.id):
                 opts = scenario.run_options(s, env)
                 argv = boot.run_argv(
@@ -760,6 +765,60 @@ class ScenarioTest(unittest.TestCase):
         self.assertEqual(scenario.verdict(s, False, {}, self.ROLES), [])
         self.assertEqual(scenario.verdict(s, True, good, self.ROLES),
                          ['boot passed, expected fail'])
+
+    GUEST_STATE = ('mounted yes\npoweroff yes\npowered_off yes\n'
+                   'shutdown_seconds 4\n'
+                   'order umount=30.1 disconnect=30.5 ifdown=31.0\n'
+                   'event [   30.100000] EXT4-fs (nvme1n1): unmounting\n'
+                   'guest ctrl nvme1 tcp nqn.x state=live\n')
+
+    def test_guest_scenarios(self):
+        shipped = [s for s in scenario.find(tags=['shutdown'])]
+        self.assertTrue(shipped)
+        self.assertTrue(all(s.guest is not None for s in shipped))
+        for text, msg in (('[guest]\nconnect = "udev"\n', 'guest.connect'),
+                          ('[guest]\nconfig = "x.conf"\n', 'guest.config'),
+                          ('[guest]\nlvm = true\n', "unknown key 'lvm'"),
+                          ('[guest]\n[boot]\nhostonly = true\n',
+                           'no \\[boot\\]'),
+                          ('[guest]\n[expect]\npaths = { root = 1 }\n',
+                           'no \\[boot\\]')):
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(ConfigError, msg):
+                    scenario.load(self.write(text))
+        s = scenario.load(self.write('[guest]\nconnect = "discoverd"\n'))
+        package, v3 = boot.Tree(package=True), boot.Tree('t', major=3)
+        self.assertEqual(guest.major(package, s), guest.PACKAGE_MAJOR)
+        self.assertEqual(guest.flavor(s), 'discoverd')
+        self.assertEqual(guest.config_file(s, package), 'discovery.conf')
+        self.assertEqual(guest.config_file(s, v3), 'nvme-fabrics.conf')
+        tagged = scenario.load(self.write('tags = ["nvme-cli-3"]\n[guest]\n'))
+        self.assertFalse(scenario.applies(
+            tagged, boot.scenario_major(package, tagged)))
+        self.assertTrue(scenario.applies(
+            tagged, boot.scenario_major(v3, tagged)))
+
+    def test_guest_verdict(self):
+        s = scenario.load(self.write('[guest]\nshutdown_limit = 10\n'))
+        facts = guest.parse_state(self.GUEST_STATE)
+        self.assertEqual(facts['order'],
+                         'umount=30.1 disconnect=30.5 ifdown=31.0')
+        self.assertEqual(len(facts['event']), 1)
+        self.assertEqual(guest.verdict(s, facts), [])
+        slow = guest.parse_state(self.GUEST_STATE.replace(
+            'shutdown_seconds 4', 'shutdown_seconds 95') +
+            'error [  120.1] nvme nvme1: failed nvme_keep_alive_end_io '
+            'error=10\n')
+        self.assertEqual(guest.verdict(s, slow), [
+            'the power-off took 95s, more than 10s',
+            'console: [  120.1] nvme nvme1: failed nvme_keep_alive_end_io '
+            'error=10'])
+        hung = guest.parse_state('mounted yes\npoweroff yes\n'
+                                 'powered_off no\n')
+        self.assertEqual(guest.verdict(s, hung), [
+            f'no power-off: QEMU was killed after {guest.TIMEOUT}s'])
+        self.assertEqual(guest.verdict(s, guest.parse_state('mounted no\n')),
+                         ['the guest did not mount /srv/data'])
 
     def test_xfail_on(self):
         s = scenario.load(self.write('[xfail_on]\n"v3.2" = "bug"\n'))

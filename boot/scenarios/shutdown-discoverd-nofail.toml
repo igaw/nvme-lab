@@ -1,0 +1,8 @@
+# nvme-cli#3309 with nvme-cli 3 and nvme-discoverd, the mount without
+# _netdev (#4332, case B).
+name = "shutdown with an NVMe/TCP mount (nofail), nvme-discoverd"
+tags = ["shutdown", "guest", "nvme-cli-3", "discoverd"]
+
+[guest]
+connect = "discoverd"
+fstab = "nofail"

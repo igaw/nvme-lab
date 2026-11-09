@@ -3,7 +3,8 @@
 
 SHELL_SCRIPTS = bin/nvmet-target bin/nuke-kernel setup/build.sh \
 	setup/debian.sh setup/freebsd.sh setup/kernel.sh nvmelab/probe.sh \
-	boot/container.sh boot/mkroot.sh boot/boot.sh
+	boot/container.sh boot/mkroot.sh boot/boot.sh boot/guest-base.sh \
+	boot/guest-build.sh boot/guest-image.sh boot/guest-boot.sh
 PYTHON ?= python3
 
 .PHONY: check test lint

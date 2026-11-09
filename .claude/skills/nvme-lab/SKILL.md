@@ -97,6 +97,11 @@ test"; read it before a run that isn't one of these:
   `xfail_on` (releases) with reason and link; XPASS fails the run.
 - `lab boot teardown` removes all results: ask first. The dashboard
   history (/root/scratch/lab-dashboard) and synced trees survive it.
+- Shutdown of a running OS with an NVMe/TCP data mount (nvme-cli#3309):
+  `lab boot test --tag shutdown [--nvme-package | --nvme TREE...]`, a
+  Debian 13 guest with systemd and ifupdown (docs, "Shutdown").
+  `--nvme-package` means Debian's 2.13 there. Results as above, plus
+  `state.txt` with the shutdown order and the bad console lines.
 - Faults: `port-removed` and `ana:STATE` on the target
   (nvme-target-control from ~/blktests), `tcp-refuse`/`tcp-drop` on the
   CI host (nvmf-failover from ~/nvmf-failover, nftables); always put

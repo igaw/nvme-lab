@@ -1,0 +1,11 @@
+# nvme-cli#3309: the reporter's hangs became intermittent with lvm2,
+# whose units scan the namespace. The guest stays up a minute, as in the
+# report the shutdown failed more often after a while.
+name = "shutdown with an NVMe/TCP mount (nofail,_netdev) and lvm2"
+tags = ["shutdown", "guest", "lvm2"]
+
+[guest]
+connect = "autoconnect"
+fstab = "nofail,_netdev"
+lvm2 = true
+uptime = 60

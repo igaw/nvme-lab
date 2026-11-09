@@ -367,9 +367,58 @@ system's (#4384), an initrd without a host identity, the NBFT's
 non-bootable, unavailable and missing entries, a root found through a
 discovery descriptor, `rd.nvmf.nonbft`, nvme-cli 2 without a registry,
 and the registry owners and `ctrl_loss_tmo` of the pre-OS connections.
-What nvme-discoverd does after switch-root (adoption, reconnects,
-shutdown) needs the OS, which the busybox root doesn't run: nvme-cli's
-mock scenarios cover that.
+What nvme-discoverd does after switch-root (adoption, reconnects)
+needs the OS, which the busybox root doesn't run: nvme-cli's mock
+scenarios cover that; the OS shutdown with a data mount has its own
+scenarios (below).
+
+#### Shutdown (Debian guest, nvme-cli#3309)
+
+The busybox root ends where the OS starts. The shutdown scenarios
+(`boot/scenarios/shutdown-*.toml`, tag `shutdown`, a `[guest]` table)
+boot a whole system instead: Debian 13 with systemd on a local disk,
+ifupdown's `networking.service` with a static `eth0`, as on a Debian
+server. nvme-cli connects the slot's `extra` subsystem at boot the way a
+user sets it up (`discovery.conf` or `nvme-fabrics.conf`, its
+`nvmf-autoconnect.service` as installed, or `nvme-discoverd`), fstab
+mounts the file system on it on `/srv/data` (`nofail`, with or without
+`_netdev`), the guest writes data that stays in the page cache
+(`dirty_mb`, 256 MB) and powers off with `systemctl poweroff`. The case
+passes when the guest mounted the file system and powered off within
+`shutdown_limit` (60s), and the console after the power-off shows none
+of: `error -101`, `nvme_keep_alive_end_io`, `no available path`, I/O
+timeouts, blocked tasks, stop jobs that wait, failed unmounts. QEMU is
+killed after `timeout` (300s).
+
+```
+lab boot test -j 5 --tag shutdown --nvme-package          # Debian's 2.13
+lab boot test -j 8 --tag shutdown --nvme master --nvme v32 --nvme v216 \
+    --nvme v213 --nvme v28
+```
+
+`--nvme-package` is Debian's nvme-cli here (2.13-2, the report's), not
+Tumbleweed's. A tree is built for the guest in nvme-cli's Debian CI
+image (`TREE/.lab-debian-legacy`, `-discoverd` for nvme-cli 3 with
+`nvme-discoverd`) and installed into the guest's disk. The guest is
+built once, in `/root/scratch/lab-boot/debian` (debootstrap, ~450 MB;
+remove the directory to build it again); a case's disk is a qcow2
+overlay of it, set up through `qemu-nbd` on the CI host
+(`/dev/nbd<slot-1>`) and removed after the run.
+
+`state.txt` of a case: `mounted`, `poweroff`, `powered_off`,
+`shutdown_seconds`, `order umount=T disconnect=T ifdown=T` (the kernel
+time of the first unmount of the data file system, controller removal
+and `eth0` down after the power-off; the guest's ifupdown hooks log
+`LAB-EVENT ifdown-start/-done`), the `error` lines, the shutdown steps
+in console order (`event`) and what the guest saw at the mount (`guest`:
+controllers, registry, mount, units). The console has the kernel's info
+messages (`loglevel=7`) and systemd's status lines.
+
+Scenario keys: `connect` (`autoconnect`, `discoverd`), `config`
+(default by version), `fstab`, `wait_online` (a drop-in that makes
+`nvmf-autoconnect.service` want `network-online.target`, as the report's
+`nvmeOF-boot-pause.service` did), `lvm2` (install Debian's lvm2),
+`uptime`, `dirty_mb`, `shutdown_limit`, `timeout`.
 
 #### Dashboard
 

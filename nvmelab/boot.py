@@ -38,7 +38,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from . import faults, nbft, remote, scenario, sync
+from . import faults, guest, nbft, remote, scenario, sync
 from .config import ConfigError
 from .slots import (BOOT_DIR, CONTAINER_DIR, IMAGE, OLD_CONTAINER, OLD_NQNS,
                     Slot, slots)
@@ -405,10 +405,11 @@ def build_argv(slot, tree):
 
 
 def expected_duration(s):
-    """A rough rank of how long scenario S boots: a boot that must fail
-    waits for dracut to give up, faults cost extra steps."""
-    return (s.expect.get('result', 'pass') == 'fail', bool(s.faults),
-            bool(s.boot.get('timeout')))
+    """A rough rank of how long scenario S boots: a shutdown scenario
+    boots a whole system, a boot that must fail waits for dracut to give
+    up, faults cost extra steps."""
+    return (s.guest is not None, s.expect.get('result', 'pass') == 'fail',
+            bool(s.faults), bool(s.boot.get('timeout')))
 
 
 @dataclass
@@ -432,6 +433,8 @@ def test_one(cfg, host, s, tree, slot, name, out, **options):
     label = f' [{tree.label}]' if options.pop('show_tree', False) else ''
     print(f'--- {s.id}{label}: {s.name} (slot {slot.n})', file=out,
           flush=True)
+    if s.guest is not None:
+        return test_guest(cfg, host, s, tree, slot, env, name, out, label)
     rc = run(cfg, host, name, slot=slot, out=out, tree=tree.name,
              package=tree.package, **options,
              **scenario.run_options(s, env))
@@ -459,6 +462,38 @@ def test_one(cfg, host, s, tree, slot, name, out, **options):
     return result, bad, errors
 
 
+def test_guest(cfg, host, s, tree, slot, env, name, out, label):
+    """test_one() of a shutdown scenario (guest.py)."""
+    rc = guest.run(cfg, host, s, tree, slot, env, name, out)
+    if rc not in (0, 1):
+        errors = [f'could not be set up (exit {rc}), see '
+                  f'{BOOT_DIR}/out/{name}/log']
+        facts = {}
+    else:
+        facts = guest.parse_state(read_state(cfg, host, name))
+        errors = guest.verdict(s, facts)
+    result, bad = (('FAIL', True) if rc not in (0, 1)
+                   else scenario.outcome(s, errors, tree.version))
+    print(f'{result} {s.id}{label}', file=out, flush=True)
+    if facts.get('order'):
+        print(f"    shutdown: {facts.get('shutdown_seconds', '-')}s, "
+              f"order {facts['order']}", file=out)
+    if result == 'XFAIL':
+        print(f'    expected: {scenario.xfail_reason(s, tree.version)}',
+              file=out)
+    if result == 'XPASS':
+        print('    passes now, update the scenario: '
+              f'{scenario.xfail_reason(s, tree.version)}', file=out)
+    for e in errors:
+        print(f'    {e}', file=out)
+    return result, bad, errors
+
+
+def scenario_major(tree, s):
+    """The nvme-cli major version scenario S runs with TREE."""
+    return guest.major(tree, s) if s.guest is not None else tree.major
+
+
 def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
          package=False, jobs=1):
     """Run SCENARIOS with each of TREES (names of 'lab sync'; none: the
@@ -477,7 +512,7 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
              else [Tree(package=package)])
     many = len(infos) > 1
     cases = [(t, s) for t in infos for s in scenarios
-             if scenario.applies(s, t.major)]
+             if scenario.applies(s, scenario_major(t, s))]
     # The longest first, so that they don't end the run alone
     cases.sort(key=lambda c: expected_duration(c[1]), reverse=True)
 
@@ -509,9 +544,40 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
                 print(done.stdout[-2000:], done.stderr[-2000:], sep='')
         return done.returncode == 0
 
-    built = [t for t in infos if t.name]
+    # The trees of boot scenarios build in the containers, the ones of
+    # shutdown scenarios in the Debian CI image, per flavor.
+    built = [t for t in infos if t.name and any(
+        c[0] is t and c[1].guest is None for c in cases)]
     with ThreadPoolExecutor(max_workers=max(1, min(jobs, len(built)))) as p:
         ok = dict(zip((t.name for t in built), p.map(build, built)))
+
+    def build_guest(key):
+        tree, kind = key
+        slot = free.get()
+        try:
+            done = remote.run(cfg, host, guest.build_argv(slot, tree.name,
+                                                          kind),
+                              capture_output=True, encoding='utf-8',
+                              errors='replace')
+        finally:
+            free.put(slot)
+        with lock:
+            state = 'ok' if done.returncode == 0 else 'FAILED'
+            print(f'build {tree.label} for the Debian guest ({kind}): '
+                  f'{state}', flush=True)
+            if done.returncode:
+                print(done.stdout[-2000:], done.stderr[-2000:], sep='')
+        return done.returncode == 0
+
+    guest_builds = list({(t.name, guest.flavor(s)): (t, guest.flavor(s))
+                         for t, s in cases
+                         if s.guest is not None and t.name}.values())
+    if any(s.guest is not None for _, s in cases):
+        guest.ensure_base(cfg, host, available[0])
+    with ThreadPoolExecutor(
+            max_workers=max(1, min(jobs, len(guest_builds)))) as p:
+        ok_guest = dict(zip(((t.name, k) for t, k in guest_builds),
+                            p.map(build_guest, guest_builds)))
 
     if any(f['kind'] in faults.NETWORK for _, s in cases for f in s.faults):
         faults.sync_failover(cfg, host)
@@ -523,7 +589,9 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
                                else f'{prefix}-{s.id}')
         out = io.StringIO() if jobs > 1 else None
         stream = out or sys.stdout
-        if tree.name and not ok.get(tree.name):
+        built_ok = (ok_guest.get((tree.name, guest.flavor(s)))
+                    if s.guest is not None else ok.get(tree.name))
+        if tree.name and not built_ok:
             print(f'FAIL {s.id} [{tree.label}]\n    the build failed',
                   file=stream)
             emit(out)

@@ -1,0 +1,8 @@
+# nvme-cli#3309 with nvme-cli 3: nvme-discoverd connects the subsystem,
+# the mount has _netdev (#4332 orders the disconnect after its unmount).
+name = "shutdown with an NVMe/TCP mount (nofail,_netdev), nvme-discoverd"
+tags = ["shutdown", "guest", "nvme-cli-3", "discoverd"]
+
+[guest]
+connect = "discoverd"
+fstab = "nofail,_netdev"

@@ -56,6 +56,29 @@ records it).
 
 The tags nvme-cli-2 and nvme-cli-3 say which major version a scenario
 needs: lab boot test leaves it out for a tree of the other one.
+
+A scenario with a [guest] table is a shutdown scenario (guest.py): no
+NVMe/TCP root and no dracut, but a Debian 13 guest with systemd on a
+local disk that mounts a file system of the extra subsystem from fstab,
+the way a user sets it up, and powers off:
+
+    [guest]
+    connect = "autoconnect"     # or discoverd (nvme-cli 3)
+    config = "discovery.conf"   # or nvme-fabrics.conf; default: by the
+                                # tree's major version
+    fstab = "nofail,_netdev"    # the mount options
+    lvm2 = false                # install lvm2 too
+    wait_online = false         # nvmf-autoconnect.service wants
+                                # network-online.target (a drop-in)
+    uptime = 5                  # seconds mounted before the power-off
+    dirty_mb = 256              # data the unmount has to write back
+    shutdown_limit = 60         # seconds the power-off may take
+    timeout = 300               # QEMU is killed after this
+
+It passes when the guest mounted the file system and powered off within
+shutdown_limit, without a sign of a broken shutdown on the console (see
+guest.BAD_SIGNS). [boot], [[fault]] and the [expect] keys other than
+result don't apply to it.
 """
 
 import tomllib
@@ -73,7 +96,13 @@ BOOT_KEYS = {'source': str, 'hostonly': bool, 'host_identity': bool,
 EXPECT_KEYS = {'result': str, 'controllers': list, 'paths': dict,
                'owners': dict, 'ctrl_loss_tmo': dict, 'hostnqn': dict}
 FAULT_KEYS = {'kind': str, 'path': str, 'state': str}
-TOP_KEYS = {'name', 'tags', 'xfail', 'xfail_on', 'boot', 'fault', 'expect'}
+GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
+              'wait_online': bool, 'dirty_mb': int,
+              'uptime': int, 'shutdown_limit': int, 'timeout': int}
+GUEST_CONNECT = ('autoconnect', 'discoverd')
+GUEST_CONFIG = ('discovery.conf', 'nvme-fabrics.conf')
+TOP_KEYS = {'name', 'tags', 'xfail', 'xfail_on', 'boot', 'fault', 'expect',
+            'guest'}
 
 # An identity the target doesn't let in
 OTHER_HOST_ID = '0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e'
@@ -90,6 +119,7 @@ class Scenario:
     boot: dict = field(default_factory=dict)
     faults: list = field(default_factory=list)
     expect: dict = field(default_factory=dict)
+    guest: dict | None = None   # a shutdown scenario's [guest]
 
 
 def check_table(path, table, keys, what):
@@ -123,6 +153,18 @@ def load(path):
     check_table(path, s.expect, EXPECT_KEYS, 'expect')
     if s.expect.get('result', 'pass') not in ('pass', 'fail'):
         raise ConfigError(f'{path}: expect.result must be pass or fail')
+    if 'guest' in data:
+        s.guest = data['guest']
+        check_table(path, s.guest, GUEST_KEYS, 'guest')
+        if s.guest.get('connect', 'autoconnect') not in GUEST_CONNECT:
+            raise ConfigError(f"{path}: guest.connect must be one of "
+                              f"{', '.join(GUEST_CONNECT)}")
+        if s.guest.get('config', GUEST_CONFIG[0]) not in GUEST_CONFIG:
+            raise ConfigError(f"{path}: guest.config must be one of "
+                              f"{', '.join(GUEST_CONFIG)}")
+        if s.boot or data.get('fault') or set(s.expect) - {'result'}:
+            raise ConfigError(f'{path}: a [guest] scenario has no [boot], '
+                              '[[fault]] or [expect] other than result')
     for f in data.get('fault', []):
         check_table(path, f, FAULT_KEYS, 'fault')
         try:

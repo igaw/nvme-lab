@@ -1,0 +1,12 @@
+# nvme-cli#3309 as reported: the mount has nofail only, and the user
+# made nvme-cli's autoconnect wait for the network (the report's
+# nvmeOF-boot-pause.service; here a drop-in that wants
+# network-online.target), so it connects at boot. Nothing orders the
+# unmount before the network goes down.
+name = "shutdown with an NVMe/TCP mount (nofail), autoconnect after the network"
+tags = ["shutdown", "guest"]
+
+[guest]
+connect = "autoconnect"
+fstab = "nofail"
+wait_online = true

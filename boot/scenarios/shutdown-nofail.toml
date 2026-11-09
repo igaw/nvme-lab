@@ -1,0 +1,13 @@
+# nvme-cli#3309: a data file system on NVMe/TCP in fstab with nofail
+# only, nvme-cli's units as installed. nvmf-autoconnect.service is
+# ordered after network-online.target but doesn't want it, and without
+# a _netdev mount nothing else does: it may run before ifupdown brought
+# the interface up. Then, without _netdev, systemd takes the mount for a
+# local file system: nothing orders its unmount before the network goes
+# down.
+name = "shutdown with an NVMe/TCP mount (nofail), autoconnect"
+tags = ["shutdown", "guest"]
+
+[guest]
+connect = "autoconnect"
+fstab = "nofail"
