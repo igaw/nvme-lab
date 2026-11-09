@@ -55,8 +55,18 @@ def major(tree, s):
     return PACKAGE_MAJOR if tree.package else tree.major
 
 
+# The NVMe/FC target of boot/labfc (labfc-target.sh)
+LABFC_NQN = 'nqn.2026-11.io.lab:fc-data'
+
+
+def handover_kind(s):
+    """'nvme' or 'fc' for a hand-over scenario, None otherwise."""
+    root = s.guest.get('root') if s.guest is not None else None
+    return root if root in ('nvme', 'fc') else None
+
+
 def flavor(s):
-    if s.guest.get('root') == 'nvme' or s.guest.get('connect') == 'discoverd':
+    if handover_kind(s) or s.guest.get('connect') == 'discoverd':
         return 'discoverd'
     return 'legacy'
 
@@ -98,7 +108,7 @@ def run(cfg, host, s, tree, slot, env, name, out, module=None):
     status (2: could not be set up)."""
     from .boot import exec_argv
     g = s.guest
-    if g.get('root') == 'nvme':
+    if handover_kind(s):
         return run_handover(cfg, host, s, tree, slot, env, name, out, module)
     target = f"{env.traddr}:{env.trsvcid('extra')}"
     outdir = f'{BOOT_DIR}/out/{sync.check_name(name)}'
@@ -208,7 +218,12 @@ def run_handover(cfg, host, s, tree, slot, env, name, out, module):
              '--nvme', stage_dir(tree.name, 'discoverd'),
              '--dracut', f'{src}/.lab-debian-stage',
              '--uptime', str(g.get('uptime', 5))]
-    if g.get('lose'):
+    fc = handover_kind(s) == 'fc'
+    if fc:
+        image += ['--fc', f'{scripts_dir(slot)}/labfc']
+    if g.get('lose') and fc:
+        image += ['--lose-nqn', LABFC_NQN]
+    elif g.get('lose'):
         last = 'root2' if paths > 1 else 'root'
         image += ['--lose-trsvcid', env.trsvcid(last)]
     if g.get('restart'):
@@ -220,12 +235,14 @@ def run_handover(cfg, host, s, tree, slot, env, name, out, module):
                          errors='replace')
         out.write(log.stdout)
         return 2
-    args = ['--name', name, '--target',
-            f"{env.traddr}:{env.trsvcid('root')}", '--nqn', slot.root_nqn,
-            '--root-uuid', ROOT_UUID,
-            '--timeout', str(g.get('timeout', TIMEOUT)),
+    args = ['--name', name, '--timeout', str(g.get('timeout', TIMEOUT)),
             '--slot', str(slot.n)]
-    if paths > 1:
+    if fc:
+        args.append('--fc')
+    else:
+        args += ['--target', f"{env.traddr}:{env.trsvcid('root')}",
+                 '--nqn', slot.root_nqn, '--root-uuid', ROOT_UUID]
+    if paths > 1 and not fc:
         args += ['--path2', env.trsvcid('root2')]
     done = remote.run(cfg, host, exec_argv(slot, 'guest-handover.sh', *args),
                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

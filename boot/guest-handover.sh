@@ -6,6 +6,7 @@
 #   guest-handover.sh --name NAME --target TRADDR:TRSVCID --nqn NQN
 #                     --root-uuid UUID [--path2 TRSVCID] [--timeout SECONDS]
 #                     [--slot N]
+#   guest-handover.sh --name NAME --fc [--timeout SECONDS] [--slot N]
 #
 # Puts root.tar of /scratch/lab-boot/out/NAME on the root subsystem NQN
 # (an ext4 file system with UUID, connected as the container's host, the
@@ -13,6 +14,10 @@
 # NVMe/TCP from the command line (rd.nvmf.discover=, one per path: TARGET,
 # and --path2 for a multipath root), and afterwards puts the slot's
 # busybox root back (mkroot.sh), which the boot scenarios need.
+#
+# With --fc, the root is the local disk.qcow2 of guest-root.sh --fc, and
+# the pre-OS connection is the NVMe/FC one the initrd makes to its own
+# fcloop target (rd.nvmf.discover=fc,auto).
 #
 # Results in /scratch/lab-boot/out/NAME: console.txt, cmdline, and
 # state.txt, one fact per line:
@@ -32,7 +37,7 @@
 # could not be set up.
 set -u
 
-NAME='' TARGET='' NQN='' ROOT_UUID='' PATH2='' TIMEOUT=600 SLOT=1
+NAME='' TARGET='' NQN='' ROOT_UUID='' PATH2='' TIMEOUT=600 SLOT=1 FC=''
 usage() { sed -n '6,8p' "$0" >&2; exit 2; }
 while [ $# -gt 0 ]; do
     case $1 in
@@ -41,31 +46,36 @@ while [ $# -gt 0 ]; do
         --nqn) NQN=$2; shift ;;
         --root-uuid) ROOT_UUID=$2; shift ;;
         --path2) PATH2=$2; shift ;;
+        --fc) FC=1 ;;
         --timeout) TIMEOUT=$2; shift ;;
         --slot) SLOT=$2; shift ;;
         *) usage ;;
     esac
     shift
 done
-for v in "$NAME" "$TARGET" "$NQN" "$ROOT_UUID"; do
+[ -n "$NAME" ] || usage
+[ -n "$FC" ] || for v in "$TARGET" "$NQN" "$ROOT_UUID"; do
     [ -n "$v" ] || usage
 done
 TRADDR=${TARGET%:*} TRSVCID=${TARGET##*:}
 OUT=/scratch/lab-boot/out/$NAME
 HERE=$(dirname "$0")
-for f in root.tar vmlinuz initrd.img; do
+ROOTFILE=root.tar
+[ -z "$FC" ] || ROOTFILE=disk.qcow2
+for f in $ROOTFILE vmlinuz initrd.img; do
     [ -f "$OUT/$f" ] || { echo "no $f in $OUT" >&2; exit 2; }
 done
 echo "$SLOT" > "$OUT/slot"
 fail() { echo "SETUP FAILED: $*" | tee -a "$OUT/log" >&2; exit 2; }
 
 restore_root() {
+    [ -z "$FC" ] || return 0
     sh "$HERE/mkroot.sh" "$TRADDR" "$TRSVCID" "$NQN" "$ROOT_UUID" \
         >> "$OUT/log" 2>&1 || echo "could not restore the busybox root" >&2
 }
 
 # The root file system
-{
+[ -n "$FC" ] || {
     nvme disconnect -n "$NQN" >/dev/null 2>&1 || true
     nvme connect -t tcp -a "$TRADDR" -s "$TRSVCID" -n "$NQN" 2>&1 \
         | grep -v libkmod
@@ -92,24 +102,33 @@ restore_root() {
 rm -f "$OUT/root.tar"
 
 HOSTNQN=$(cat /etc/nvme/hostnqn) HOSTID=$(cat /etc/nvme/hostid)
-CMDLINE="console=ttyS0 root=UUID=$ROOT_UUID rw net.ifnames=0 panic=-1"
-CMDLINE="$CMDLINE rd.neednet=1 ip=10.0.2.15::10.0.2.2:255.255.255.0:guest:eth0:none"
+if [ -n "$FC" ]; then
+    CMDLINE="console=ttyS0 root=/dev/vda rw net.ifnames=0 panic=-1"
+    CMDLINE="$CMDLINE rd.nvmf.discover=fc,auto"
+    set -- -drive "file=$OUT/disk.qcow2,if=virtio,format=qcow2"
+    ROOTBLK='vda'
+else
+    CMDLINE="console=ttyS0 root=UUID=$ROOT_UUID rw net.ifnames=0 panic=-1"
+    CMDLINE="$CMDLINE rd.neednet=1 ip=10.0.2.15::10.0.2.2:255.255.255.0:guest:eth0:none"
+    CMDLINE="$CMDLINE rd.nvmf.discover=tcp,$TRADDR,,$TRSVCID"
+    [ -z "$PATH2" ] || CMDLINE="$CMDLINE rd.nvmf.discover=tcp,$TRADDR,,$PATH2"
+    set --
+    ROOTBLK='nvme[0-9]+n[0-9]+'
+fi
 CMDLINE="$CMDLINE rd.nvmf.hostnqn=$HOSTNQN rd.nvmf.hostid=$HOSTID"
-CMDLINE="$CMDLINE rd.nvmf.discover=tcp,$TRADDR,,$TRSVCID"
-[ -z "$PATH2" ] || CMDLINE="$CMDLINE rd.nvmf.discover=tcp,$TRADDR,,$PATH2"
 CMDLINE="$CMDLINE rd.retry=10 rd.shell=0 rd.emergency=poweroff"
 CMDLINE="$CMDLINE loglevel=7 printk.devkmsg=on systemd.show_status=1"
 echo "$CMDLINE" > "$OUT/cmdline"
 timeout "$TIMEOUT" qemu-system-x86_64 -enable-kvm -m 1024 -smp 2 \
     -nographic -no-reboot -kernel "$OUT/vmlinuz" \
     -initrd "$OUT/initrd.img" -append "$CMDLINE" \
-    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 "$@" \
     > "$OUT/console.raw" 2>&1
 QEMU=$?
 tr -d '\r' < "$OUT/console.raw" | sed -e 's/\x1b\[[0-9;?!]*[a-zA-Z]//g' \
     -e 's/\x1b\][^\x07\x1b]*\(\x07\|\x1b\\\)//g' -e 's/\x1b[c78=>]//g' \
     -e 's/^guest login: *//' > "$OUT/console.txt"
-rm -f "$OUT/console.raw" "$OUT/vmlinuz"
+rm -f "$OUT/console.raw" "$OUT/vmlinuz" "$OUT/disk.qcow2"
 C=$OUT/console.txt
 restore_root
 
@@ -130,12 +149,12 @@ since() { [ -n "$after" ] && tail -n "+$after" "$C"; }
         echo "shutdown_seconds $(echo "$end $start" | awk '{ printf "%d", $1 - $2 + 0.5 }')"
     fi
     # The root's file system, unmounted in the shutdown initramfs
-    t=$(since | grep -E 'EXT4-fs \(nvme[0-9]+n[0-9]+\): unmounting filesystem' | head -1 | ktime)
+    t=$(since | grep -E "EXT4-fs \\($ROOTBLK\\): unmounting filesystem" | head -1 | ktime)
     echo "root_umount ${t:--}"
     # nvmf-shutdown.sh's lines have no kernel time, and the console may
     # show them after the kernel's: the first removal after the root's
     # unmount, if the hook ran
-    root_t=$(since | grep -E 'EXT4-fs \(nvme[0-9]+n[0-9]+\): unmounting filesystem' | head -1 | ktime)
+    root_t=$(since | grep -E "EXT4-fs \\($ROOTBLK\\): unmounting filesystem" | head -1 | ktime)
     t=''
     if [ -n "$root_t" ] && since | grep -q 'nvmf: disconnect'; then
         t=$(since | grep 'Removing ctrl' | while read -r l; do

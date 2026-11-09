@@ -106,7 +106,7 @@ test"; read it before a run that isn't one of these:
 - Hand-over of a root on NVMe-oF to nvme-discoverd (nvme-cli#4328):
   `lab boot test --tag handover --nvme TREE --dracut-module
   DIR/modules.d/74nvmf`; builds that dracut tree for the Debian guest,
-  roots on NVMe/TCP (one or two paths),
+  roots on NVMe/TCP (one or two paths) and over NVMe/FC (fcloop),
   checks owners, a lost path, a restart and the shutdown initramfs
   disconnect (docs, "Hand-over").
 - Faults: `port-removed` and `ana:STATE` on the target

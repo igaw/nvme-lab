@@ -98,6 +98,11 @@ nvme-discoverd takes the pre-OS connections over:
     restart = true              # restart nvme-discoverd
     shutdown_limit = 60
 
+With root = "fc", the root stays on the local disk, and the pre-OS
+connection is NVMe/FC: nvme-lab's labfc module sets up a target on
+nvme-fcloop in the initrd, and dracut's FC path connects it
+(rd.nvmf.discover=fc,auto); lose deletes its I/O controller.
+
 It passes when every controller of the root has the owner pre-os and
 ctrl_loss_tmo off after the boot, the loss and the restart, its
 connection units never disconnect it (no ExecStop=), pre-os.conf names
@@ -126,7 +131,7 @@ GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
               'wait_online': bool, 'modules_load': bool, 'dirty_mb': int,
               'uptime': int, 'shutdown_limit': int, 'timeout': int,
               'root': str, 'paths': int, 'lose': bool, 'restart': bool}
-GUEST_ROOT = ('local', 'nvme')
+GUEST_ROOT = ('local', 'nvme', 'fc')
 GUEST_CONNECT = ('autoconnect', 'discoverd')
 GUEST_CONFIG = ('discovery.conf', 'nvme-fabrics.conf')
 TOP_KEYS = {'name', 'tags', 'xfail', 'xfail_on', 'boot', 'fault', 'expect',
@@ -190,7 +195,7 @@ def load(path):
         if s.guest.get('root', 'local') not in GUEST_ROOT:
             raise ConfigError(f"{path}: guest.root must be one of "
                               f"{', '.join(GUEST_ROOT)}")
-        if s.guest.get('root') == 'nvme' and \
+        if s.guest.get('root') in ('nvme', 'fc') and \
                 s.guest.get('connect', 'discoverd') != 'discoverd':
             raise ConfigError(f'{path}: a root on NVMe/TCP is handed over '
                               'to nvme-discoverd (guest.connect)')

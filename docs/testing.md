@@ -469,6 +469,10 @@ lab boot test -j 3 --tag handover --nvme TREE \
   paths, `paths`), booted from the command line (`rd.nvmf.discover=`).
   The root subsystem gets the guest's root for the case and the busybox
   root back afterwards.
+- `root = "fc"`: the root stays on the local disk; nvme-lab's dracut
+  module `labfc` (`boot/labfc`) sets up an NVMe/FC target on
+  nvme-fcloop in the initrd, and dracut's FC path connects it (the
+  nvmediscovery event, `rd.nvmf.discover=fc,auto`).
 
 A case builds the dracut tree of `--dracut-module` (the module is
 tested with its own dracut: dracut-ng's nvmf module needs its
@@ -494,7 +498,7 @@ A case passes when the root's controllers have the owner `pre-os` and
 `ctrl_loss_tmo` off in every phase, their units have no `ExecStop=`,
 `pre-os.conf` names the connections, the lost path comes back, a
 restart changes nothing, and the shutdown initramfs disconnects them
-after the root is unmounted, cleanly and in time. Both pass with
+after the root is unmounted, cleanly and in time. All three pass with
 nvme-cli branch `pre-os-owner` and dracut branch `nvmf-pre-os-owner`.
 
 #### Dashboard

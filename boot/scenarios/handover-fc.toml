@@ -1,0 +1,14 @@
+# nvme-cli#4328 over NVMe/FC, on nvme-fcloop: the initrd connects the FC
+# path through dracut's FC path (the nvmediscovery event, then
+# nvmf-autoconnect.sh fc) as the owner pre-os. nvme-discoverd takes it
+# over from the DC in pre-os.conf; its controller is deleted, as after
+# dev_loss_tmo, and comes back as pre-os (FC kickstart, DLP); a restart
+# changes nothing; the shutdown initramfs disconnects it.
+name = "hand-over of an NVMe/FC path (fcloop), path lost, restart, shutdown"
+tags = ["handover", "guest", "pre-os", "fc", "nvme-cli-3"]
+
+[guest]
+root = "fc"
+lose = true
+restart = true
+timeout = 420

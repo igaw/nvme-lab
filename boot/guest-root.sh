@@ -5,7 +5,8 @@
 #
 #   guest-root.sh --base DIR --out DIR --nbd N --hostnqn NQN --hostid ID
 #                 --nvme STAGE --dracut STAGE
-#                 [--lose-trsvcid PORT] [--restart] [--uptime SECONDS]
+#                 [--lose-trsvcid PORT | --lose-nqn NQN] [--restart]
+#                 [--uptime SECONDS] [--fc DIR]
 #
 # --base     guest-base.sh's directory
 # --out      the case's results directory: gets root.tar, vmlinuz,
@@ -17,7 +18,11 @@
 # --lose-trsvcid   after the boot, delete the root's controller on this
 #            port, as the kernel does when it gives a path up (FC's
 #            dev_loss_tmo), and wait for nvme-discoverd to connect it again
+# --lose-nqn the same for the I/O controller of subsystem NQN
 # --restart  then restart nvme-discoverd
+# --fc       the root stays on the local disk (disk.qcow2 is kept); the
+#            initrd gets nvme-lab's labfc module (DIR), an NVMe/FC target
+#            on nvme-fcloop that dracut's FC path connects
 # --uptime   seconds the guest waits before it powers off (default 5)
 #
 # The initrd is built in the guest's root, with that dracut and its kernel,
@@ -32,6 +37,7 @@
 set -eu
 
 BASE='' OUT='' NBD='' HOSTNQN='' HOSTID='' NVME='' MODULE='' LOSE='' RESTART=''
+LOSE_NQN='' FC=''
 UPTIME=5
 usage() { sed -n '6,8p' "$0" >&2; exit 2; }
 while [ $# -gt 0 ]; do
@@ -44,6 +50,8 @@ while [ $# -gt 0 ]; do
         --nvme) NVME=$2; shift ;;
         --dracut) MODULE=$2; shift ;;
         --lose-trsvcid) LOSE=$2; shift ;;
+        --lose-nqn) LOSE_NQN=$2; shift ;;
+        --fc) FC=$2; shift ;;
         --restart) RESTART=1 ;;
         --uptime) UPTIME=$2; shift ;;
         *) usage ;;
@@ -91,7 +99,7 @@ cleanup() {
     fi
     disconnect
     rmdir "$MNT" 2>/dev/null || true
-    rm -f "$DISK"
+    [ -n "$FC" ] || rm -f "$DISK"
 }
 trap cleanup EXIT
 fail() { echo "SETUP FAILED: $*"; exit 2; }
@@ -143,11 +151,17 @@ in_guest dracut --version
 rm -rf "$MNT/var/cache/lab-debs"
 
 echo "== configuration"
-ROOT_DEV=$(sed -n 's/^\([^ ]*\) \/ .*/\1/p' "$MNT/etc/fstab")
-echo "root: $ROOT_DEV -> the NVMe/TCP namespace (root= on the command line)"
-sed -i '\| / |d' "$MNT/etc/fstab"
-printf 'auto lo\niface lo inet loopback\n\n# The initrd configures eth0; the root is behind it\niface eth0 inet manual\n' \
-    > "$MNT/etc/network/interfaces"
+if [ -n "$FC" ]; then
+    echo "root: the local disk; NVMe/FC from the initrd (labfc)"
+    cp -r "$FC" "$MNT/usr/lib/dracut/modules.d/99labfc"
+    chown -R 0:0 "$MNT/usr/lib/dracut/modules.d/99labfc"
+else
+    ROOT_DEV=$(sed -n 's/^\([^ ]*\) \/ .*/\1/p' "$MNT/etc/fstab")
+    echo "root: $ROOT_DEV -> the NVMe/TCP namespace (root= on the command line)"
+    sed -i '\| / |d' "$MNT/etc/fstab"
+    printf 'auto lo\niface lo inet loopback\n\n# The initrd configures eth0; the root is behind it\niface eth0 inet manual\n' \
+        > "$MNT/etc/network/interfaces"
+fi
 systemctl --root="$MNT" enable nvme-discoverd.service \
     || fail "no nvme-discoverd.service"
 systemctl --root="$MNT" disable nvmf-autoconnect.service 2>/dev/null || true
@@ -195,11 +209,19 @@ report() {
 # nvme-discoverd takes the connections over
 sleep 10
 report boot
-LOSE=$LOSE
-if [ -n "\$LOSE" ]; then
+LOSE=$LOSE LOSE_NQN=$LOSE_NQN
+# The I/O controller to lose: on port LOSE, or of subsystem LOSE_NQN
+lost() {
+    [ "\$(attr "\$1" cntrltype)" = io ] || return 1
+    if [ -n "\$LOSE_NQN" ]; then
+        [ "\$(attr "\$1" subsysnqn)" = "\$LOSE_NQN" ]
+    else
+        attr "\$1" address | grep -q "trsvcid=\$LOSE"
+    fi
+}
+if [ -n "\$LOSE\$LOSE_NQN" ]; then
     for c in /sys/class/nvme/nvme*; do
-        [ "\$(attr "\$c" cntrltype)" = io ] || continue
-        attr "\$c" address | grep -q "trsvcid=\$LOSE" || continue
+        lost "\$c" || continue
         mark "lose \${c##*/}"
         echo 1 > "\$c/delete_controller"
         break
@@ -209,8 +231,7 @@ if [ -n "\$LOSE" ]; then
     while [ \$i -lt 60 ]; do
         found=''
         for c in /sys/class/nvme/nvme*; do
-            [ "\$(attr "\$c" cntrltype)" = io ] || continue
-            attr "\$c" address | grep -q "trsvcid=\$LOSE" && found=\${c##*/}
+            lost "\$c" && found=\${c##*/}
         done
         [ -n "\$found" ] && break
         i=\$((i + 1))
@@ -248,8 +269,10 @@ systemctl --root="$MNT" enable lab-handover.service
 
 echo "== initrd"
 KVER=$(ls "$MNT/lib/modules")
+ADD="nvmf systemd-networkd"
+[ -z "$FC" ] || ADD="nvmf labfc"
 in_guest dracut --force --no-hostonly --no-hostonly-cmdline \
-    --add "nvmf systemd-networkd" \
+    --add "$ADD" \
     --add-drivers "nvme_tcp nvme_fabrics virtio_net virtio_pci ext4" \
     --kver "$KVER" "/boot/initrd.img-$KVER" > "$OUT/dracut.log" 2>&1 \
     || fail "dracut, see $OUT/dracut.log"
@@ -259,13 +282,15 @@ grep -q 'nvmf-shutdown\|74nvmf' "$OUT/lsinitrd.txt" \
 cp "$MNT/boot/initrd.img-$KVER" "$OUT/initrd.img"
 cp -L "$MNT/boot/vmlinuz-$KVER" "$OUT/vmlinuz"
 
-echo "== root.tar"
 for m in dev/pts dev proc sys; do
     umount "$MNT/$m" 2>/dev/null || true
 done
-tar -C "$MNT" --one-file-system --numeric-owner -cpf "$OUT/root.tar" . \
-    || fail "tar of the root"
-ls -la "$OUT/root.tar"
+if [ -z "$FC" ]; then
+    echo "== root.tar"
+    tar -C "$MNT" --one-file-system --numeric-owner -cpf "$OUT/root.tar" . \
+        || fail "tar of the root"
+    ls -la "$OUT/root.tar"
+fi
 trap - EXIT
 cleanup || fail "cleaning up"
 echo "== root ready"

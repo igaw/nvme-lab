@@ -475,7 +475,7 @@ def test_guest(cfg, host, s, tree, slot, env, name, out, label,
                module=None):
     """test_one() of a shutdown or hand-over scenario (guest.py)."""
     rc = guest.run(cfg, host, s, tree, slot, env, name, out, module)
-    handover = s.guest.get('root') == 'nvme'
+    handover = guest.handover_kind(s)
     if rc not in (0, 1):
         errors = [f'could not be set up (exit {rc}), see '
                   f'{BOOT_DIR}/out/{name}/log']
@@ -485,7 +485,8 @@ def test_guest(cfg, host, s, tree, slot, env, name, out, label,
         facts['order'] = (f"umount={facts.get('root_umount', '-')} "
                           f"pre-os-disconnect="
                           f"{facts.get('pre_os_disconnect', '-')}")
-        errors = guest.handover_verdict(s, facts, slot.root_nqn)
+        errors = guest.handover_verdict(
+            s, facts, guest.LABFC_NQN if handover == 'fc' else slot.root_nqn)
     else:
         facts = guest.parse_state(read_state(cfg, host, name))
         errors = guest.verdict(s, facts)
