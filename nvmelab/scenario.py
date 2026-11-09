@@ -52,7 +52,8 @@ reported as XFAIL while it does, and as XPASS, a failure, once it passes,
 so that its expectation gets updated. xfail_on does the same for the
 nvme-cli releases given by their tags, e.g. a release with a bug that is
 fixed later; it applies to a tree at exactly that tag ('lab sync'
-records it).
+records it). A key may also name a tree by its name (e.g. suite-master,
+until a fix is merged) or "package", the distribution's nvme-cli.
 
 The tags nvme-cli-2 and nvme-cli-3 say which major version a scenario
 needs: lab boot test leaves it out for a tree of the other one.
@@ -293,10 +294,16 @@ def verdict(s, passed, state, roles, values=None):
     return errors
 
 
-def xfail_reason(s, version=None):
-    """Why S is expected to fail on the nvme-cli release VERSION (a tag,
-    None for a tree that is no release), or None."""
-    return s.xfail or s.xfail_on.get(version or '')
+def xfail_reason(s, keys=None):
+    """Why S is expected to fail on the nvme-cli tree KEYS names (its
+    release tag and label, see boot.Tree.keys; a single tag; or None for
+    none), or None."""
+    if isinstance(keys, str):
+        keys = (keys,)
+    for key in keys or ():
+        if key in s.xfail_on:
+            return s.xfail_on[key]
+    return s.xfail
 
 
 def applies(s, major):
@@ -308,8 +315,8 @@ def applies(s, major):
                    for t in s.tags)
 
 
-def outcome(s, errors, version=None):
+def outcome(s, errors, keys=None):
     """PASS, FAIL, XFAIL or XPASS, and whether that counts as failed."""
-    if xfail_reason(s, version):
+    if xfail_reason(s, keys):
         return ('XFAIL', False) if errors else ('XPASS', True)
     return ('FAIL', True) if errors else ('PASS', False)

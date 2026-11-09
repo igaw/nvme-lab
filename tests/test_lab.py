@@ -830,6 +830,17 @@ class ScenarioTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, 'xfail_on'):
             scenario.load(self.write('xfail_on = "v3.2"\n'))
 
+    def test_xfail_on_tree_name(self):
+        s = scenario.load(self.write(
+            '[xfail_on]\n"suite-master" = "not merged"\n"package" = "old"\n'))
+        self.assertEqual(scenario.xfail_reason(
+            s, boot.Tree('suite-master').keys), 'not merged')
+        self.assertEqual(scenario.xfail_reason(
+            s, boot.Tree(package=True).keys), 'old')
+        self.assertIsNone(scenario.xfail_reason(
+            s, boot.Tree('shutdown-units').keys))
+        self.assertEqual(boot.Tree('t', version='v3.2').keys, ('v3.2', 't'))
+
     def test_applies(self):
         s = scenario.load(self.write('tags = ["nbft", "nvme-cli-3"]\n'))
         self.assertTrue(scenario.applies(s, 3))

@@ -5,7 +5,9 @@
 # don't).
 name = "shutdown with an NVMe/TCP mount (nofail,_netdev), nvme-discoverd"
 tags = ["shutdown", "guest", "nvme-cli-3", "discoverd"]
-xfail = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (3.2, master)"
+[xfail_on]
+"v3.2" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch shutdown-units)"
+"suite-master" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch shutdown-units)"
 
 [guest]
 connect = "discoverd"

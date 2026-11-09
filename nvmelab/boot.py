@@ -388,6 +388,12 @@ class Tree:
     def label(self):
         return self.name or ('package' if self.package else 'installed')
 
+    @property
+    def keys(self):
+        """What a scenario's xfail_on names this tree by: its release
+        tag and its label (the tree's name, or "package")."""
+        return tuple(k for k in (self.version, self.label) if k)
+
 
 def tree_info(cfg, host, name):
     """The Tree NAME, with the version 'lab sync' recorded."""
@@ -449,14 +455,14 @@ def test_one(cfg, host, s, tree, slot, name, out, **options):
                                   scenario.placeholders(env))
     # A case that could not be set up is no expected failure
     result, bad = (('FAIL', True) if rc not in (0, 1)
-                   else scenario.outcome(s, errors, tree.version))
+                   else scenario.outcome(s, errors, tree.keys))
     print(f'{result} {s.id}{label}', file=out, flush=True)
     if result == 'XFAIL':
-        print(f'    expected: {scenario.xfail_reason(s, tree.version)}',
+        print(f'    expected: {scenario.xfail_reason(s, tree.keys)}',
               file=out)
     if result == 'XPASS':
         print('    passes now, update the scenario: '
-              f'{scenario.xfail_reason(s, tree.version)}', file=out)
+              f'{scenario.xfail_reason(s, tree.keys)}', file=out)
     for e in errors:
         print(f'    {e}', file=out)
     return result, bad, errors
@@ -473,17 +479,17 @@ def test_guest(cfg, host, s, tree, slot, env, name, out, label):
         facts = guest.parse_state(read_state(cfg, host, name))
         errors = guest.verdict(s, facts)
     result, bad = (('FAIL', True) if rc not in (0, 1)
-                   else scenario.outcome(s, errors, tree.version))
+                   else scenario.outcome(s, errors, tree.keys))
     print(f'{result} {s.id}{label}', file=out, flush=True)
     if facts.get('order'):
         print(f"    shutdown: {facts.get('shutdown_seconds', '-')}s, "
               f"order {facts['order']}", file=out)
     if result == 'XFAIL':
-        print(f'    expected: {scenario.xfail_reason(s, tree.version)}',
+        print(f'    expected: {scenario.xfail_reason(s, tree.keys)}',
               file=out)
     if result == 'XPASS':
         print('    passes now, update the scenario: '
-              f'{scenario.xfail_reason(s, tree.version)}', file=out)
+              f'{scenario.xfail_reason(s, tree.keys)}', file=out)
     for e in errors:
         print(f'    {e}', file=out)
     return result, bad, errors
@@ -608,7 +614,7 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
             free.put(slot)
         emit(out)
         return Case(tree, s, name, result, bad, errors,
-                    scenario.xfail_reason(s, tree.version),
+                    scenario.xfail_reason(s, tree.keys),
                     time.monotonic() - start)
 
     with ThreadPoolExecutor(max_workers=jobs) as pool:
