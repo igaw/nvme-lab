@@ -1,8 +1,10 @@
 # nvme-cli#3309: the reporter's hangs became intermittent with lvm2,
 # whose units scan the namespace. The guest stays up a minute, as in the
-# report the shutdown failed more often after a while.
+# report the shutdown failed more often after a while. The mount has
+# _netdev: the unmount is ordered before the network goes down.
 name = "shutdown with an NVMe/TCP mount (nofail,_netdev) and lvm2"
 tags = ["shutdown", "guest", "lvm2"]
+xfail = "lvm2-monitor.service stops after networking.service, with the controller still connected (nothing disconnects it): lvm blocked, keep-alive timeouts, no power-off (nvme-cli#3309, lvmteam/lvm2#194)"
 
 [guest]
 connect = "autoconnect"

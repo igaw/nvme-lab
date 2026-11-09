@@ -1,8 +1,11 @@
 # nvme-cli#3309 with nvme-cli 3 and nvme-discoverd, the mount without
-# _netdev (#4332, case B).
-name = "shutdown with an NVMe/TCP mount (nofail), nvme-discoverd"
+# _netdev (#4332, case B), nvme-fabrics loaded at boot
+# (shutdown-discoverd-modules).
+name = "shutdown with an NVMe/TCP mount (nofail), nvme-discoverd, nvme-fabrics loaded at boot"
 tags = ["shutdown", "guest", "nvme-cli-3", "discoverd"]
+xfail = "nvme-discoverd's connection unit disconnects before the unmount of a mount without _netdev: 'block nvme1n1: no available path - failing I/O' (3.2, master; #4332 case B)"
 
 [guest]
 connect = "discoverd"
 fstab = "nofail"
+modules_load = true

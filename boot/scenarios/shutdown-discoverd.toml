@@ -1,7 +1,11 @@
 # nvme-cli#3309 with nvme-cli 3: nvme-discoverd connects the subsystem,
-# the mount has _netdev (#4332 orders the disconnect after its unmount).
+# the mount has _netdev, nvme-cli's units as installed. On a host without
+# NVMe devices nothing loads nvme-fabrics (nvmf-autoconnect.service has
+# modprobe@nvme_fabrics.service, nvme-discoverd's connection units
+# don't).
 name = "shutdown with an NVMe/TCP mount (nofail,_netdev), nvme-discoverd"
 tags = ["shutdown", "guest", "nvme-cli-3", "discoverd"]
+xfail = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (3.2, master)"
 
 [guest]
 connect = "discoverd"

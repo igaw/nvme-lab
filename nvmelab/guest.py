@@ -111,6 +111,8 @@ def run(cfg, host, s, tree, slot, env, name, out):
         image.append('--lvm2')
     if g.get('wait_online'):
         image.append('--wait-online')
+    if g.get('modules_load'):
+        image.append('--modules-load')
     done = remote.run(cfg, host, image)
     if done.returncode:
         log = remote.run(cfg, host, f'tail -20 {shlex.quote(outdir)}/log',

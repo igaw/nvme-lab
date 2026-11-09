@@ -417,8 +417,24 @@ messages (`loglevel=7`) and systemd's status lines.
 Scenario keys: `connect` (`autoconnect`, `discoverd`), `config`
 (default by version), `fstab`, `wait_online` (a drop-in that makes
 `nvmf-autoconnect.service` want `network-online.target`, as the report's
-`nvmeOF-boot-pause.service` did), `lvm2` (install Debian's lvm2),
-`uptime`, `dirty_mb`, `shutdown_limit`, `timeout`.
+`nvmeOF-boot-pause.service` did), `modules_load` (`nvme_fabrics` in
+`/etc/modules-load.d`), `lvm2` (install Debian's lvm2), `uptime`,
+`dirty_mb`, `shutdown_limit`, `timeout`.
+
+What they found (2026-11-09, nvme-cli 2.8 to master and Debian's 2.13,
+as `xfail` in the scenarios): with `_netdev` the shutdown is clean
+(`shutdown-netdev`, and `shutdown-discoverd-modules`: unmount,
+disconnect, ifdown). Without it, `nvmf-autoconnect.service` races the
+network at boot (it is ordered after `network-online.target` but
+doesn't want it) and mostly mounts nothing (`shutdown-nofail`); once it
+connects (`shutdown-nofail-online`), the network goes down under the
+unmount, as in #3309: keep-alive timeouts, blocked jbd2, a power-off
+only after `ctrl_loss_tmo`. With lvm2, `lvm2-monitor.service` stops
+after the network with the controller still connected and blocks
+(`shutdown-lvm2`). nvme-discoverd's connection units fail on a host
+where nothing loads `nvme-fabrics` (`shutdown-discoverd`), and without
+`_netdev` they disconnect before the unmount: `no available path -
+failing I/O` (`shutdown-discoverd-nofail`, #4332 case B).
 
 #### Dashboard
 

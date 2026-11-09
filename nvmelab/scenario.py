@@ -70,6 +70,7 @@ the way a user sets it up, and powers off:
     lvm2 = false                # install lvm2 too
     wait_online = false         # nvmf-autoconnect.service wants
                                 # network-online.target (a drop-in)
+    modules_load = false        # nvme-fabrics in /etc/modules-load.d
     uptime = 5                  # seconds mounted before the power-off
     dirty_mb = 256              # data the unmount has to write back
     shutdown_limit = 60         # seconds the power-off may take
@@ -97,7 +98,7 @@ EXPECT_KEYS = {'result': str, 'controllers': list, 'paths': dict,
                'owners': dict, 'ctrl_loss_tmo': dict, 'hostnqn': dict}
 FAULT_KEYS = {'kind': str, 'path': str, 'state': str}
 GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
-              'wait_online': bool, 'dirty_mb': int,
+              'wait_online': bool, 'modules_load': bool, 'dirty_mb': int,
               'uptime': int, 'shutdown_limit': int, 'timeout': int}
 GUEST_CONNECT = ('autoconnect', 'discoverd')
 GUEST_CONFIG = ('discovery.conf', 'nvme-fabrics.conf')

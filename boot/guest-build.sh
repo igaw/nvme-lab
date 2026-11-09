@@ -32,8 +32,10 @@ fi
 exec 9> "$TREE/.lab-debian.lock"
 flock 9
 if [ ! -f "$BUILD/build.ninja" ]; then
+    # The libdir of Debian's ld.so; the image's meson takes lib64
     # shellcheck disable=SC2086
     meson setup "$BUILD" "$TREE" --prefix=/usr --sysconfdir=/etc \
+        --libdir=lib/x86_64-linux-gnu \
         --wrap-mode=default --force-fallback-for=libnvme \
         --buildtype=release -Ddocs=false $OPTS
 fi

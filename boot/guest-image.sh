@@ -7,7 +7,7 @@
 #                  --config discovery.conf|nvme-fabrics.conf
 #                  --target TRADDR:TRSVCID --data-uuid UUID
 #                  --fstab OPTIONS [--lvm2] [--wait-online]
-#                  [--uptime SECONDS] [--dirty-mb MB]
+#                  [--uptime SECONDS] [--dirty-mb MB] [--modules-load]
 #
 # --base     guest-base.sh's directory
 # --out      the case's results directory: gets disk.qcow2 and log
@@ -23,6 +23,7 @@
 # --wait-online  a drop-in that makes nvmf-autoconnect.service want
 #            network-online.target: it is only ordered after it, so
 #            without a _netdev mount (which wants it) it races the network
+# --modules-load  load nvme-fabrics at boot (/etc/modules-load.d)
 # --uptime   seconds the guest waits with the mount before it powers off
 # --dirty-mb data the guest writes to /srv/data and keeps in the page
 #            cache (default 256): the unmount writes it back, which takes
@@ -35,7 +36,7 @@
 set -eu
 
 BASE='' OUT='' NBD='' HOSTNQN='' HOSTID='' NVME='' CONNECT='' CONFIG=''
-TARGET='' DATA_UUID='' FSTAB='' LVM2='' WAIT_ONLINE='' UPTIME=5 DIRTY_MB=256
+TARGET='' DATA_UUID='' FSTAB='' LVM2='' WAIT_ONLINE='' MODULES_LOAD='' UPTIME=5 DIRTY_MB=256
 usage() { sed -n '5,10p' "$0" >&2; exit 2; }
 while [ $# -gt 0 ]; do
     case $1 in
@@ -52,6 +53,7 @@ while [ $# -gt 0 ]; do
         --fstab) FSTAB=$2; shift ;;
         --lvm2) LVM2=1 ;;
         --wait-online) WAIT_ONLINE=1 ;;
+        --modules-load) MODULES_LOAD=1 ;;
         --uptime) UPTIME=$2; shift ;;
         --dirty-mb) DIRTY_MB=$2; shift ;;
         *) usage ;;
@@ -192,6 +194,10 @@ if [ -n "$WAIT_ONLINE" ]; then
     printf '[Unit]\nWants=network-online.target\n' > "$d/lab-wait-online.conf"
     echo "nvmf-autoconnect.service wants network-online.target"
 fi
+if [ -n "$MODULES_LOAD" ]; then
+    echo nvme_fabrics > "$MNT/etc/modules-load.d/nvme-fabrics.conf"
+    echo "nvme_fabrics in /etc/modules-load.d"
+fi
 
 echo "== fstab: $FSTAB"
 mkdir -p "$MNT/srv/data"
@@ -208,6 +214,16 @@ until mountpoint -q /srv/data; do
     i=\$((i + 1))
     if [ \$i -gt 120 ]; then
         mark "nomount"
+        # Why: what the nvme units said
+        {
+            echo LAB-GUEST-DIAG-BEGIN
+            echo "modules: \$(lsmod | awk '/^nvme/ { print \$1 }' | tr '\\n' ' ')"
+            echo "classes: \$(ls /sys/class | grep nvme | tr '\\n' ' ')"
+            systemctl --no-pager --full status 'nvme*' 'nvmf*' 2>&1 | head -60
+            journalctl -b --no-pager -o short-monotonic -u 'nvme*' \\
+                -u 'nvmf*' 2>&1 | tail -80
+            echo LAB-GUEST-DIAG-END
+        } > /dev/ttyS0
         systemctl poweroff --no-block
         exit 0
     fi

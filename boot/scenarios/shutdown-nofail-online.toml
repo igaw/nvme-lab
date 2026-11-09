@@ -5,6 +5,7 @@
 # unmount before the network goes down.
 name = "shutdown with an NVMe/TCP mount (nofail), autoconnect after the network"
 tags = ["shutdown", "guest"]
+xfail = "without _netdev nothing orders the unmount before networking.service stops: keep-alive timeouts, jbd2 blocked, the power-off waits for ctrl_loss_tmo (531s with Debian's 2.13) (nvme-cli#3309)"
 
 [guest]
 connect = "autoconnect"
