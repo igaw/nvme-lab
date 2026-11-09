@@ -209,6 +209,9 @@ timeout "$TIMEOUT" qemu-system-x86_64 -enable-kvm -m 1024 -smp 2 \
 sed -n '/LAB-BOOT-STATE-BEGIN/,/LAB-BOOT-STATE-END/p' "$OUT/console.txt" \
     | tr -d '\r' | sed '/LAB-BOOT-STATE-/d' > "$OUT/state.txt"
 if grep -a -q LAB-BOOT-ROOT-OK "$OUT/console.txt"; then
+    # 75 MB per case fill the disk in a few matrix runs: a passed case
+    # keeps lsinitrd.txt, a failed one its initrd too
+    rm -f "$OUT/initrd.img"
     echo "RESULT=PASS $NAME"
     cat "$OUT/state.txt"
     exit 0
