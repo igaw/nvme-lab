@@ -425,7 +425,10 @@ Scenario keys: `connect` (`autoconnect`, `discoverd`), `config`
 `nvmf-autoconnect.service` want `network-online.target`, as the report's
 `nvmeOF-boot-pause.service` did), `modules_load` (`nvme_fabrics` in
 `/etc/modules-load.d`), `lvm2` (install Debian's lvm2), `uptime`,
-`dirty_mb`, `shutdown_limit`, `timeout`.
+`dirty_mb`, `shutdown_limit`, `timeout`, and `network`: `ifupdown`
+(default) or `networkmanager` (NetworkManager with a keyfile for `eth0`
+and `NetworkManager-wait-online`, as on Fedora, RHEL and SLE; a
+dispatcher script logs the same `LAB-EVENT ifdown-*` steps).
 
 What they found (2026-11-09, nvme-cli 2.8 to master and Debian's 2.13,
 as `xfail` in the scenarios): with `_netdev` the shutdown is clean
@@ -451,7 +454,9 @@ unmounts and before the network. `shutdown-lvm2` and
 releases, Debian's package and `suite-master` (`xfail_on`, which names a
 tree by its release tag, its name or `package`). A mount without
 `_netdev` is not supported: with the fixes it connects, and the
-disconnect runs before the unmount.
+disconnect runs before the unmount. NetworkManager leaves `eth0` up at
+the shutdown: `shutdown-nm-netdev` passes everywhere,
+`shutdown-nm-nofail` fails as with ifupdown.
 
 #### Hand-over (a Debian root on NVMe-oF, nvme-cli#4328)
 

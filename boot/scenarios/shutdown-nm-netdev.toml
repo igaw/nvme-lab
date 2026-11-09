@@ -1,0 +1,8 @@
+# nvme-cli#3309 with NetworkManager, as on Fedora, RHEL, SLE: the
+# shutdown with an NVMe/TCP mount (nofail,_netdev), autoconnect.
+name = "shutdown with an NVMe/TCP mount (nofail,_netdev), autoconnect, NetworkManager"
+tags = ["shutdown", "guest", "networkmanager"]
+
+[guest]
+network = "networkmanager"
+fstab = "nofail,_netdev"

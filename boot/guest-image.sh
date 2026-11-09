@@ -8,6 +8,7 @@
 #                  --target TRADDR:TRSVCID --data-uuid UUID
 #                  --fstab OPTIONS [--lvm2] [--wait-online]
 #                  [--uptime SECONDS] [--dirty-mb MB] [--modules-load]
+#                  [--network ifupdown|networkmanager]
 #
 # --base     guest-base.sh's directory
 # --out      the case's results directory: gets disk.qcow2 and log
@@ -24,6 +25,9 @@
 #            network-online.target: it is only ordered after it, so
 #            without a _netdev mount (which wants it) it races the network
 # --modules-load  load nvme-fabrics at boot (/etc/modules-load.d)
+# --network  who configures eth0: ifupdown's networking.service, as on a
+#            Debian server (default), or NetworkManager, as on Fedora,
+#            RHEL, SLE and Debian desktops
 # --uptime   seconds the guest waits with the mount before it powers off
 # --dirty-mb data the guest writes to /srv/data and keeps in the page
 #            cache (default 256): the unmount writes it back, which takes
@@ -37,6 +41,7 @@ set -eu
 
 BASE='' OUT='' NBD='' HOSTNQN='' HOSTID='' NVME='' CONNECT='' CONFIG=''
 TARGET='' DATA_UUID='' FSTAB='' LVM2='' WAIT_ONLINE='' MODULES_LOAD='' UPTIME=5 DIRTY_MB=256
+NETWORK=ifupdown
 usage() { sed -n '5,10p' "$0" >&2; exit 2; }
 while [ $# -gt 0 ]; do
     case $1 in
@@ -54,6 +59,7 @@ while [ $# -gt 0 ]; do
         --lvm2) LVM2=1 ;;
         --wait-online) WAIT_ONLINE=1 ;;
         --modules-load) MODULES_LOAD=1 ;;
+        --network) NETWORK=$2; shift ;;
         --uptime) UPTIME=$2; shift ;;
         --dirty-mb) DIRTY_MB=$2; shift ;;
         *) usage ;;
@@ -198,6 +204,35 @@ if [ -n "$MODULES_LOAD" ]; then
     echo nvme_fabrics > "$MNT/etc/modules-load.d/nvme-fabrics.conf"
     echo "nvme_fabrics in /etc/modules-load.d"
 fi
+
+echo "== network: $NETWORK"
+case $NETWORK in
+    ifupdown) ;;
+    networkmanager)
+        # dpkg, not apt: see guest-root.sh
+        in_guest sh -c 'DEBIAN_FRONTEND=noninteractive dpkg -i \
+            /var/cache/lab-debs/network-manager/*.deb' >/dev/null \
+            || fail "installing NetworkManager"
+        printf 'auto lo\niface lo inet loopback\n' > "$MNT/etc/network/interfaces"
+        c=$MNT/etc/NetworkManager/system-connections/eth0.nmconnection
+        printf '[connection]\nid=eth0\ntype=ethernet\ninterface-name=eth0\n\n[ipv4]\nmethod=manual\naddress1=10.0.2.15/24,10.0.2.2\n\n[ipv6]\nmethod=disabled\n' \
+            > "$c"
+        chmod 600 "$c"
+        systemctl --root="$MNT" disable networking.service 2>/dev/null || true
+        systemctl --root="$MNT" enable NetworkManager.service \
+            NetworkManager-wait-online.service \
+            || fail "enabling NetworkManager"
+        # The shutdown steps of the network, as ifupdown's hooks below
+        d=$MNT/etc/NetworkManager/dispatcher.d
+        mkdir -p "$d/pre-down.d"
+        # shellcheck disable=SC2016 # $1 and $2 are the dispatcher's
+        printf '#!/bin/sh\ncase $2 in\n    pre-down) echo "LAB-EVENT ifdown-start $1" > /dev/kmsg ;;\n    down) echo "LAB-EVENT ifdown-done $1" > /dev/kmsg ;;\nesac\n' \
+            > "$d/90-lab-mark"
+        chmod 755 "$d/90-lab-mark"
+        ln -sf ../90-lab-mark "$d/pre-down.d/90-lab-mark"
+        ;;
+    *) fail "bad --network $NETWORK" ;;
+esac
 
 echo "== fstab: $FSTAB"
 mkdir -p "$MNT/srv/data"

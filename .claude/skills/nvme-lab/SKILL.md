@@ -103,6 +103,7 @@ test"; read it before a run that isn't one of these:
   Debian 13 guest with systemd and ifupdown (docs, "Shutdown").
   `--nvme-package` means Debian's 2.13 there. Results as above, plus
   `state.txt` with the shutdown order and the bad console lines.
+  `network = "networkmanager"` in `[guest]` for NetworkManager.
 - Hand-over of a root on NVMe-oF to nvme-discoverd (nvme-cli#4328):
   `lab boot test --tag handover --nvme TREE --dracut-module
   DIR/modules.d/74nvmf`; builds that dracut tree for the Debian guest,

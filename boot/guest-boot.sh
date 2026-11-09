@@ -119,7 +119,7 @@ first() {   # the kernel time of the first line after poweroff matching $1
             'error -101|nvme_keep_alive_end_io|no available path|I/O tag [0-9]+ .* timeout|blocked for more than|A stop job is running|Failed unmounting|timed out' \
             | head -20 | sed 's/^/error /'
         tail -n "+$after" "$C" | grep -E \
-            'LAB-EVENT|unmounting filesystem|Removing ctrl|srv-data|networking\.service|nvmf-autoconnect|nvme-discoverd|nvmf-connect|lvm2|reboot: Power down' \
+            'LAB-EVENT|unmounting filesystem|Removing ctrl|srv-data|networking\.service|NetworkManager|nvmf-autoconnect|nvme-discoverd|nvmf-connect|lvm2|reboot: Power down' \
             | head -60 | sed 's/^/event /'
     fi
     sed -n '/LAB-GUEST-STATE-BEGIN/,/LAB-GUEST-STATE-END/p' "$C" \

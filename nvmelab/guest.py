@@ -121,7 +121,8 @@ def run(cfg, host, s, tree, slot, env, name, out, module=None):
              '--config', config_file(s, tree), '--target', target,
              '--data-uuid', DATA_UUID, '--fstab', g.get('fstab', 'nofail'),
              '--uptime', str(g.get('uptime', 5)),
-             '--dirty-mb', str(g.get('dirty_mb', 256))]
+             '--dirty-mb', str(g.get('dirty_mb', 256)),
+             '--network', g.get('network', 'ifupdown')]
     if g.get('lvm2'):
         image.append('--lvm2')
     if g.get('wait_online'):

@@ -12,7 +12,8 @@
 # packages of Debian's nvme-cli (2.13) and lvm2 are in the image, not
 # installed, under /var/cache/lab-debs/{nvme-cli,lvm2}: guest-image.sh
 # installs them for a case that wants them. So are Debian's dracut and
-# dracut-network (and jq, which its nvmf module needs), for the hand-over cases (guest-root.sh), whose root is
+# dracut-network (and jq, which its nvmf module needs), for the hand-over cases,
+# and NetworkManager, for the shutdown cases with it (guest-root.sh), whose root is
 # on NVMe/TCP. Does nothing when DIR/base.qcow2 of this revision exists
 # (REV in DIR/version); remove DIR to build it again.
 set -eu
@@ -21,7 +22,7 @@ set -eu
 DIR=$1
 IMAGE=ghcr.io/linux-nvme/debian:latest
 # Bump when the image changes
-REV=4
+REV=5
 [ -f "$DIR/base.qcow2" ] && grep -qx "rev $REV" "$DIR/version" 2>/dev/null \
     && exit 0
 rm -f "$DIR/base.qcow2"
@@ -52,7 +53,7 @@ docker run --rm --privileged --network host --ulimit nofile=1024:1024 \
     # Debian'"'"'s nvme-cli and lvm2, to install when a case wants them
     # The cache has the packages of debootstrap
     chroot "$R" apt-get clean
-    for p in nvme-cli lvm2 "dracut dracut-network jq"; do
+    for p in nvme-cli lvm2 "dracut dracut-network jq" network-manager; do
         # shellcheck disable=SC2086 # p is a list of packages
         chroot "$R" apt-get -q -d install -y --no-install-recommends $p \
             >/dev/null

@@ -74,6 +74,7 @@ the way a user sets it up, and powers off:
     wait_online = false         # nvmf-autoconnect.service wants
                                 # network-online.target (a drop-in)
     modules_load = false        # nvme-fabrics in /etc/modules-load.d
+    network = "ifupdown"        # or networkmanager: who configures eth0
     uptime = 5                  # seconds mounted before the power-off
     dirty_mb = 256              # data the unmount has to write back
     shutdown_limit = 60         # seconds the power-off may take
@@ -130,7 +131,9 @@ FAULT_KEYS = {'kind': str, 'path': str, 'state': str}
 GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
               'wait_online': bool, 'modules_load': bool, 'dirty_mb': int,
               'uptime': int, 'shutdown_limit': int, 'timeout': int,
-              'root': str, 'paths': int, 'lose': bool, 'restart': bool}
+              'root': str, 'paths': int, 'lose': bool, 'restart': bool,
+              'network': str}
+GUEST_NETWORK = ('ifupdown', 'networkmanager')
 GUEST_ROOT = ('local', 'nvme', 'fc')
 GUEST_CONNECT = ('autoconnect', 'discoverd')
 GUEST_CONFIG = ('discovery.conf', 'nvme-fabrics.conf')
@@ -192,6 +195,9 @@ def load(path):
         if s.guest.get('connect', 'autoconnect') not in GUEST_CONNECT:
             raise ConfigError(f"{path}: guest.connect must be one of "
                               f"{', '.join(GUEST_CONNECT)}")
+        if s.guest.get('network', 'ifupdown') not in GUEST_NETWORK:
+            raise ConfigError(f"{path}: guest.network must be one of "
+                              f"{', '.join(GUEST_NETWORK)}")
         if s.guest.get('root', 'local') not in GUEST_ROOT:
             raise ConfigError(f"{path}: guest.root must be one of "
                               f"{', '.join(GUEST_ROOT)}")
