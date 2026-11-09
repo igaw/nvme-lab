@@ -1,6 +1,9 @@
-# dracut's pre-pivot hook (nvmf-registry-pre-os.sh, nvme-cli 3): the
-# controller of the root gets owner=pre-os, the other one stays unowned.
-name = "registry owners after a boot from the command line"
+# The pre-OS model (nvme-cli#4328): dracut connects with --owner=pre-os,
+# so every controller of the initrd gets the owner pre-os and
+# ctrl_loss_tmo=-1, and nvme records each discovery controller of
+# rd.nvmf.discover= in /run/nvme/pre-os.conf.d. Needs an nvme-cli with the
+# pre-OS model and dracut's nvmf-pre-os-owner (run with --tag pre-os).
+name = "pre-OS owners after a boot from the command line"
 tags = ["pre-os", "nvme-cli-3"]
 
 [boot]
@@ -10,4 +13,6 @@ append = ["rd.nvmf.discover=tcp,{traddr},,{extra}"]
 [expect]
 result = "pass"
 controllers = ["root", "extra"]
-owners = { root = "pre-os", extra = "" }
+owners = { root = "pre-os", extra = "pre-os" }
+ctrl_loss_tmo = { root = "off", extra = "off" }
+pre_os_conf = 2

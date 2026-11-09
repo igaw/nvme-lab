@@ -30,6 +30,7 @@ A scenario is a TOML file in boot/scenarios/:
     owners = { root = "pre-os", extra = "" }
     ctrl_loss_tmo = { root = "off" }
     hostnqn = { root = "{hostnqn}" }
+    pre_os_conf = 1
 
 Placeholders, in append, nbft_ssns, nbft_discovery and the expected host
 NQNs: {traddr}, {trsvcid} (the root's first path), {root2} (its second
@@ -45,7 +46,8 @@ hostnqn are what every controller of a subsystem has: its nvme-cli
 registry owner ("" for unowned), its ctrl_loss_tmo as sysfs shows it
 ("off" for -1) and its host NQN. Each is checked only when given,
 against the state the root's /init reports (state.txt, see
-boot/mkroot.sh).
+boot/mkroot.sh). pre_os_conf is the number of connections the initrd
+recorded in /run/nvme/pre-os.conf.d for nvme-discoverd (nvme-cli#4328).
 
 A scenario with xfail is expected to fail for the reason given: it is
 reported as XFAIL while it does, and as XPASS, a failure, once it passes,
@@ -96,7 +98,8 @@ BOOT_KEYS = {'source': str, 'hostonly': bool, 'host_identity': bool,
              'nbft': bool, 'nbft_ssns': list, 'nbft_discovery': list,
              'nbft_no_root': bool, 'append': list, 'timeout': int}
 EXPECT_KEYS = {'result': str, 'controllers': list, 'paths': dict,
-               'owners': dict, 'ctrl_loss_tmo': dict, 'hostnqn': dict}
+               'owners': dict, 'ctrl_loss_tmo': dict, 'hostnqn': dict,
+               'pre_os_conf': int}
 FAULT_KEYS = {'kind': str, 'path': str, 'state': str}
 GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
               'wait_online': bool, 'modules_load': bool, 'dirty_mb': int,
@@ -257,10 +260,22 @@ def parse_state(text):
     return ctrls
 
 
-def verdict(s, passed, state, roles, values=None):
+def parse_pre_os_conf(text):
+    """state.txt: the connections the initrd recorded in pre-os.conf.d,
+    [(file, controller line)]; a file holds the connections of a host."""
+    conf = []
+    for line in text.splitlines():
+        words = line.split(maxsplit=2)
+        if len(words) == 3 and words[0] == 'pre-os-conf':
+            conf.append((words[1], words[2]))
+    return conf
+
+
+def verdict(s, passed, state, roles, values=None, pre_os_conf=None):
     """What is wrong with the run of S (empty: nothing). PASSED: the
     root's /init ran; STATE: parse_state(); ROLES: {nqn: role}; VALUES:
-    the placeholders, for the expected host NQNs."""
+    the placeholders, for the expected host NQNs; PRE_OS_CONF:
+    parse_pre_os_conf()."""
     errors = []
     want = s.expect.get('result', 'pass')
     if (want == 'pass') != passed:
@@ -291,6 +306,11 @@ def verdict(s, passed, state, roles, values=None):
                 if got != str(want):
                     errors.append(f"{subsys} {ctrl}: {what} '{got}', "
                                   f"expected '{want}'")
+    if 'pre_os_conf' in s.expect:
+        got = len(pre_os_conf or {})
+        if got != s.expect['pre_os_conf']:
+            errors.append(f'pre-os.conf: {got} connections, expected '
+                          f"{s.expect['pre_os_conf']}")
     return errors
 
 

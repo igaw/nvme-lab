@@ -10,8 +10,10 @@
 # controller, "ctrl NAME TRANSPORT SUBSYSNQN KEY=VALUE..." with its
 # state, trsvcid, ctrl_loss_tmo and hostnqn, and one per entry of the
 # nvme-cli registry (/run moves along at switch_root), "registry NAME
-# owner=OWNER" (empty: unowned). Then it prints "LAB-BOOT-ROOT-OK <kernel
-# command line>".
+# owner=OWNER" (empty: unowned), and one per connection the initrd
+# recorded for the OS environment (nvme-cli#4328, /run/nvme/pre-os.conf.d),
+# "pre-os-conf FILE CONTROLLER-LINE" (a file per host). Then it prints "LAB-BOOT-ROOT-OK
+# <kernel command line>".
 set -eu
 
 [ $# -eq 4 ] || { echo "usage: $0 TRADDR TRSVCID NQN UUID" >&2; exit 2; }
@@ -66,6 +68,12 @@ done
 for e in /run/nvme/registry/*; do
     [ -d "$e" ] || continue
     echo "registry ${e##*/} owner=$($B cat "$e/owner" 2>/dev/null)"
+done
+for f in /run/nvme/pre-os.conf.d/*.conf; do
+    [ -f "$f" ] || continue
+    $B grep '^controller' "$f" | $B tr -d ' ' | while read -r c; do
+        echo "pre-os-conf ${f##*/} $c"
+    done
 done
 echo LAB-BOOT-STATE-END
 echo "LAB-BOOT-ROOT-OK $($B cat /proc/cmdline)"

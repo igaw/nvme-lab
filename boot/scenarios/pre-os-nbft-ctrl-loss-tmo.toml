@@ -1,11 +1,12 @@
 # The same for an NBFT boot path.
 name = "ctrl_loss_tmo of an NBFT root path"
-tags = ["pre-os", "nbft"]
-xfail = "connect-all --nbft connects with the default ctrl_loss_tmo (600), not -1 (nvme-cli#4328, work items 1 and 3)"
+tags = ["pre-os", "nbft", "nvme-cli-3"]
 
 [boot]
 nbft = true
 
 [expect]
 result = "pass"
+owners = { root = "pre-os" }
 ctrl_loss_tmo = { root = "off" }
+pre_os_conf = 0

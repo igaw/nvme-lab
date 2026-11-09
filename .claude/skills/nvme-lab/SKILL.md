@@ -79,7 +79,8 @@ test"; read it before a run that isn't one of these:
 - A dracut change: `lab boot test -j 8 --nvme master --nvme v32 --nvme
   v216 --nvme v213 --nvme v28 --dracut-module DIR/modules.d/74nvmf
   --skip-tag pre-os --dashboard [--dashboard-link 'TEXT=URL']`; ~5 min.
-  `pre-os` scenarios only with dracut's `nvmf-registry-pre-os` branch.
+  `pre-os` scenarios only with an nvme-cli tree of the pre-OS model
+  (nvme-cli#4328) and a dracut that passes `--owner=pre-os`.
   Tell the user the printed file:// URL of the dashboard.
 - An nvme-cli change: sync the branch (`-w` for uncommitted changes) as
   one more `--nvme` tree.

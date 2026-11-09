@@ -820,6 +820,23 @@ class ScenarioTest(unittest.TestCase):
         self.assertEqual(guest.verdict(s, guest.parse_state('mounted no\n')),
                          ['the guest did not mount /srv/data'])
 
+    def test_pre_os_conf(self):
+        text = (self.STATE + 'pre-os-conf 0123456789abcdef.conf '
+                'controller=transport=tcp;traddr=10.0.2.2;trsvcid=4430\n')
+        text += ('pre-os-conf 0123456789abcdef.conf '
+                 'controller=transport=tcp;traddr=10.0.2.2;trsvcid=4431\n')
+        conf = scenario.parse_pre_os_conf(text)
+        self.assertEqual(conf, [
+            ('0123456789abcdef.conf',
+             'controller=transport=tcp;traddr=10.0.2.2;trsvcid=4430'),
+            ('0123456789abcdef.conf',
+             'controller=transport=tcp;traddr=10.0.2.2;trsvcid=4431')])
+        s = scenario.load(self.write('[expect]\npre_os_conf = 2\n'))
+        self.assertEqual(scenario.verdict(s, True, {}, self.ROLES, None,
+                                          conf), [])
+        self.assertEqual(scenario.verdict(s, True, {}, self.ROLES), [
+            'pre-os.conf: 0 connections, expected 2'])
+
     def test_xfail_on(self):
         s = scenario.load(self.write('[xfail_on]\n"v3.2" = "bug"\n'))
         self.assertEqual(scenario.outcome(s, ['e'], 'v3.2'), ('XFAIL', False))

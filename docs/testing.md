@@ -161,8 +161,9 @@ lab boot test -j 8 --nvme master --nvme v32 --nvme v216 --nvme v213 \
 
 About 5 minutes for some 90 boots once the trees are built (each tree
 is built once per change, side by side). `--skip-tag pre-os` leaves out
-the scenarios that need dracut's registry prototype
-(`nvmf-registry-pre-os`); test that branch without it. For a pull
+the scenarios of the pre-OS model of nvme-cli#4328, which need an
+nvme-cli with it (and dracut passing `--owner=pre-os`): run them with
+such a tree, `--tag pre-os`. For a pull
 request, use a worktree of its branch (`git worktree add /tmp/pr BRANCH`)
 and its `modules.d/74nvmf`. Open the printed `file://` URL in a browser.
 
@@ -343,6 +344,8 @@ paths = { root = 1 }        # how many controllers
 owners = { root = "pre-os" }          # registry owner, "" = none
 ctrl_loss_tmo = { root = "off" }      # as sysfs shows it
 hostnqn = { root = "{hostnqn}" }
+pre_os_conf = 1             # connections the initrd recorded in
+                            # /run/nvme/pre-os.conf.d
 ```
 
 Placeholders: `{traddr}`, `{trsvcid}` (the root's first path), `{root2}`,
@@ -351,9 +354,11 @@ slot's identity), `{other_hostnqn}`/`{other_hostid}` (one the target
 doesn't know). The full format: `lab boot test --help`.
 
 Tags say what a scenario is about or needs: `cmdline`, `static`,
-`legacy`, `nbft`, `multipath`, `fault`, `hostnqn`, `pre-os` (the
-registry owners and `ctrl_loss_tmo` of the pre-OS environment, dracut's
-`nvmf-registry-pre-os` prototype, nvme-cli#4328), and `nvme-cli-2` /
+`legacy`, `nbft`, `multipath`, `fault`, `hostnqn`, `pre-os` (the pre-OS
+model of nvme-cli#4328: every connection of the initrd has the owner
+`pre-os` and `ctrl_loss_tmo` off, and is recorded in `pre-os.conf`;
+needs an nvme-cli with it), `shutdown`, `guest`, and
+`nvme-cli-2` /
 `nvme-cli-3`: a scenario with one of these runs only with trees of that
 major version. Each scenario gets a PASS, FAIL, XFAIL or XPASS line with
 what differed, then a summary per tree; the exit status is 0 unless one

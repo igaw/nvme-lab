@@ -1,7 +1,8 @@
-# dracut's pre-pivot hook with a multipath root: every path of the root
-# subsystem (the controllers behind the head the root is mounted on)
-# gets owner=pre-os.
-name = "registry owners of a multipath root"
+# The pre-OS model with a multipath NBFT root: every path of the root and
+# the non-bootable subsystem get the owner pre-os and ctrl_loss_tmo=-1.
+# The NBFT is still there after switch-root, so nothing is recorded in
+# pre-os.conf.
+name = "pre-OS owners of a multipath root"
 tags = ["pre-os", "nbft", "multipath", "nvme-cli-3"]
 
 [boot]
@@ -11,4 +12,6 @@ nbft_ssns = ["{root2}/{root_nqn}", "extra,nonboot"]
 result = "pass"
 controllers = ["root", "extra"]
 paths = { root = 2 }
-owners = { root = "pre-os", extra = "" }
+owners = { root = "pre-os", extra = "pre-os" }
+ctrl_loss_tmo = { root = "off", extra = "off" }
+pre_os_conf = 0

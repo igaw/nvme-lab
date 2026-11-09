@@ -448,11 +448,13 @@ def test_one(cfg, host, s, tree, slot, name, out, **options):
         errors = [f'could not be set up (exit {rc}), see '
                   f'{BOOT_DIR}/out/{name}/log']
     else:
-        state = scenario.parse_state(read_state(cfg, host, name))
+        text = read_state(cfg, host, name)
+        state = scenario.parse_state(text)
         # read again: a fault may have moved a path to another port
         env = read_env(cfg, host, slot)
         errors = scenario.verdict(s, rc == 0, state, slot.roles,
-                                  scenario.placeholders(env))
+                                  scenario.placeholders(env),
+                                  scenario.parse_pre_os_conf(text))
     # A case that could not be set up is no expected failure
     result, bad = (('FAIL', True) if rc not in (0, 1)
                    else scenario.outcome(s, errors, tree.keys))

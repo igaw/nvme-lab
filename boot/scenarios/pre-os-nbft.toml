@@ -1,7 +1,7 @@
-# dracut's pre-pivot hook with an NBFT: connect-all --nbft makes both
-# controllers owner=nbft; the root's becomes pre-os, the other one loses
-# its owner.
-name = "registry owners after an NBFT boot"
+# The pre-OS model with an NBFT: connect-all --nbft makes both controllers,
+# the root's and the non-bootable one's, owner=pre-os (once nbft): the
+# OS environment treats every pre-OS path alike (nvme-cli#4328).
+name = "pre-OS owners after an NBFT boot"
 tags = ["pre-os", "nbft", "nvme-cli-3"]
 
 [boot]
@@ -10,4 +10,6 @@ nbft_ssns = ["extra,nonboot"]
 [expect]
 result = "pass"
 controllers = ["root", "extra"]
-owners = { root = "pre-os", extra = "" }
+owners = { root = "pre-os", extra = "pre-os" }
+ctrl_loss_tmo = { root = "off", extra = "off" }
+pre_os_conf = 0

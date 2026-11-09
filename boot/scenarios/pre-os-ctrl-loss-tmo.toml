@@ -1,12 +1,13 @@
 # The pre-OS environment connects with ctrl_loss_tmo=-1: the kernel never
 # gives up a boot path (nvme-cli#4328, decision of 2026-11-05).
 name = "ctrl_loss_tmo of a root path from the command line"
-tags = ["pre-os", "cmdline"]
-xfail = "dracut connects with the default ctrl_loss_tmo (600), not -1 (nvme-cli#4328, work item 3)"
+tags = ["pre-os", "nvme-cli-3"]
 
 [boot]
 source = "cmdline"
 
 [expect]
 result = "pass"
+owners = { root = "pre-os" }
 ctrl_loss_tmo = { root = "off" }
+pre_os_conf = 1
