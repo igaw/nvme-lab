@@ -52,7 +52,7 @@ SCRIPTS = Path(__file__).resolve().parent.parent / 'boot'
 ROOT_PORTS, EXTRA_PORTS = 2, 1
 ROOT_UUID = 'b0936c83-d08a-4c81-bb63-efc6e619581f'
 SOURCES = ('cmdline', 'static', 'legacy', 'none')
-NETWORKS = ('networkd', 'legacy')
+NETWORKS = ('networkd', 'legacy', 'nm')
 
 # The guest's NIC and QEMU's user networking (boot.sh): the HFI of an NBFT
 GUEST_MAC = '52:54:00:12:34:56'
@@ -259,7 +259,8 @@ def nbft_table(target, root=True, ssns=(), discovery=(), extra=None,
 def run_argv(name, target, tree=None, package=False, module=None,
              source='cmdline', hostonly=False, append=None, timeout=None,
              nbft_file=None, host_identity=True, network='networkd',
-             ip_dev=None, nic='user', vlan=0, slot=Slot()):
+             ip_dev=None, nic='user', vlan=0, nm_generator=None,
+             slot=Slot()):
     """The docker exec of one boot case in SLOT; MODULE is the overlay's
     directory and NBFT_FILE the table in the container."""
     if source not in SOURCES:
@@ -296,6 +297,8 @@ def run_argv(name, target, tree=None, package=False, module=None,
         if not re.fullmatch(r'[A-Za-z0-9.:_-]+', ip_dev):
             raise ConfigError(f"bad ip_dev '{ip_dev}'")
         args += ['--ip-dev', ip_dev]
+    if nm_generator:
+        args += ['--nm-generator', nm_generator]
     check_nic(nic, vlan)
     if nic != 'user':
         ipaddr, prefix, gateway = guest_net(slot, nic, vlan)
@@ -445,7 +448,7 @@ def nbft_path(name):
 # The modules next to a --dracut-module in its tree (modules.d) that boot.sh
 # uses with it: the network modules of the boots (network = "legacy" and
 # networkd), whose handling of what nvmf writes is part of the test.
-SIBLINGS = ('35network-legacy', '11systemd-networkd')
+SIBLINGS = ('35network-legacy', '11systemd-networkd', '35network-manager')
 
 
 def upload_siblings(cfg, host, module, dest):
@@ -513,6 +516,7 @@ class Tree:
     package: bool = False
     version: str | None = None      # the release tag the tree is at
     major: int | None = None
+    nm: str | None = None           # the NetworkManager tree of --nm
 
     @property
     def label(self):
@@ -521,8 +525,11 @@ class Tree:
     @property
     def keys(self):
         """What a scenario's xfail_on names this tree by: its release
-        tag and its label (the tree's name, or "package")."""
-        return tuple(k for k in (self.version, self.label) if k)
+        tag, its label (the tree's name, or "package"), and the
+        NetworkManager it boots with: "nm-package", or "nm-" and the name
+        of the tree of --nm."""
+        nm = f'nm-{self.nm}' if self.nm else 'nm-package'
+        return tuple(k for k in (self.version, self.label, nm) if k)
 
 
 def tree_info(cfg, host, name):
@@ -532,6 +539,32 @@ def tree_info(cfg, host, name):
                      capture_output=True, encoding='utf-8')
     version, major = sync.parse_describe(out.stdout)
     return Tree(name, version=version, major=major)
+
+
+NM_BUILDER = 'lab-nm-build'
+NM_BUILD_IMAGE = 'ghcr.io/linux-nvme/tumbleweed:latest'
+
+
+def build_nm(cfg, host, tree, slot=Slot()):
+    """nm-initrd-generator of the NetworkManager TREE (lab sync), built
+    in the container NM_BUILDER (made on first use, Tumbleweed as the
+    slots) with SLOT's uploaded scripts. Returns its path in the
+    containers (/scratch/TREE/...)."""
+    name = sync.check_name(tree)
+    remote.run(cfg, host, f'docker inspect {NM_BUILDER} >/dev/null 2>&1 '
+               f'&& docker start {NM_BUILDER} >/dev/null || docker run -d '
+               f'--name {NM_BUILDER} --network host -v /root/scratch:/scratch '
+               f'{NM_BUILD_IMAGE} sleep infinity >/dev/null', check=True)
+    done = remote.run(cfg, host, ['docker', 'exec', NM_BUILDER, 'sh',
+                                  f'{slot.container_dir}/scripts/nm-build.sh',
+                                  f'/scratch/{name}'],
+                      capture_output=True, encoding='utf-8', errors='replace')
+    if done.returncode != 0:
+        raise ConfigError(f'building NetworkManager {tree} failed:\n'
+                          f'{done.stderr}')
+    print(f'build NetworkManager {tree}: ok, {done.stderr.strip()}',
+          flush=True)
+    return done.stdout.strip().splitlines()[-1]
 
 
 def build_argv(slot, tree):
@@ -644,13 +677,14 @@ def scenario_major(tree, s):
 
 
 def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
-         package=False, jobs=1):
+         package=False, jobs=1, nm=None):
     """Run SCENARIOS with each of TREES (names of 'lab sync'; none: the
     package with PACKAGE, else what is installed), JOBS at a time, each
     in a free slot; print a verdict for each. A scenario for another
     nvme-cli major version than a tree's is left out for it. The trees
-    are built first, once each. Returns the Cases, in the order of the
-    trees and scenarios."""
+    are built first, once each. NM: a NetworkManager tree whose
+    nm-initrd-generator the boots use. Returns the Cases, in the order of
+    the trees and scenarios."""
     available = existing_slots(cfg, host)
     if not available:
         raise ConfigError("no slot: run 'lab boot setup' first")
@@ -659,6 +693,8 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
                           f"slot(s): 'lab boot setup --slots {jobs}'")
     infos = ([tree_info(cfg, host, t) for t in trees] if trees
              else [Tree(package=package)])
+    for t in infos:
+        t.nm = nm
     many = len(infos) > 1
     cases = [(t, s) for t in infos for s in scenarios
              if scenario.applies(s, scenario_major(t, s))]
@@ -732,6 +768,8 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
     if any(f['kind'] in faults.NETWORK for _, s in cases for f in s.faults):
         faults.sync_failover(cfg, host)
     options = dict(module=module, synced=True, show_tree=many)
+    if nm:
+        options['nm_generator'] = build_nm(cfg, host, nm, available[0])
 
     def one(case):
         tree, s = case

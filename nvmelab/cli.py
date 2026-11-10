@@ -150,6 +150,8 @@ def cmd_boot_run(cfg, args):
         for f in fault_specs:
             print(f"fault: {f['kind']} on {f['path']}")
         return 0
+    if args.nm:
+        options['nm_generator'] = boot.build_nm(cfg, host, args.nm, slot)
     return boot.run(cfg, host, args.name, module=args.dracut_module,
                     nbft_options=nbft, fault_specs=fault_specs, slot=slot,
                     **options)
@@ -171,7 +173,8 @@ def cmd_boot_test(cfg, args):
     started = datetime.datetime.now(datetime.timezone.utc)
     cases = boot.test(cfg, host, scenarios, prefix=args.prefix,
                       module=args.dracut_module, trees=args.nvme,
-                      package=args.nvme_package, jobs=args.jobs)
+                      package=args.nvme_package, jobs=args.jobs,
+                      nm=args.nm)
     if args.dashboard:
         links = [dashboard.parse_link(lk) for lk in args.dashboard_link]
         site = dashboard.publish(cfg, host, cases, started, args.dashboard,
@@ -331,6 +334,10 @@ def parser():
                       help="reinstall the distribution's nvme-cli")
     b.add_argument('--dracut-module', metavar='DIR', help="a local "
                    "directory to use as dracut's 74nvmf module")
+    b.add_argument('--nm', metavar='TREE', help='boot with '
+                   'nm-initrd-generator of the NetworkManager tree '
+                   f'{SCRATCH}/TREE (lab sync), built in a Tumbleweed '
+                   "container, instead of the package's")
     b.add_argument('--source', choices=boot.SOURCES,
                    help='where the initrd learns the target: cmdline: '
                    'rd.nvmf.discover= (the default); static: '
@@ -347,8 +354,8 @@ def parser():
                    "HFI's (implies --nic tap)")
     b.add_argument('--network', choices=boot.NETWORKS, default='networkd',
                    help="the initrd's network module: networkd "
-                   '(systemd-networkd, the default) or legacy '
-                   '(network-legacy)')
+                   '(systemd-networkd, the default), legacy '
+                   '(network-legacy) or nm (network-manager)')
     b.add_argument('--no-host-identity', action='store_true',
                    help='no rd.nvmf.hostnqn/hostid on the command line of '
                    'an initrd that is not hostonly')
@@ -391,6 +398,10 @@ def parser():
                       help="reinstall the distribution's nvme-cli")
     b.add_argument('--dracut-module', metavar='DIR', help="a local "
                    "directory to use as dracut's 74nvmf module")
+    b.add_argument('--nm', metavar='TREE', help='boot with '
+                   'nm-initrd-generator of the NetworkManager tree '
+                   f'{SCRATCH}/TREE (lab sync), built in a Tumbleweed '
+                   "container, instead of the package's")
     b.add_argument('-j', '--jobs', type=positive, default=1, metavar='N',
                    help='boot N scenarios at a time, one per slot of setup '
                    '(default: 1)')

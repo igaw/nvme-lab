@@ -17,7 +17,7 @@ A scenario is a TOML file in boot/scenarios/:
     nbft_no_root = false
     append = ["rd.nvmf.discover=tcp,{traddr},,{extra}"]
     timeout = 240
-    network = "networkd"        # the initrd's: networkd or legacy
+    network = "networkd"        # the initrd's: networkd, legacy or nm
     ip_dev = "eth0"             # the interface of the ip= (no NBFT)
     nic = "user"                # the guest's NIC: user (slirp) or tap
     vlan = 0                    # the VLAN of the guest's network (tap)

@@ -16,10 +16,10 @@ set -eu
 CI_IMAGE=ghcr.io/linux-nvme/tumbleweed:latest
 # The initrd uses systemd and systemd-networkd with a static ip=, or
 # network-legacy (boot.sh --network legacy), which needs dhclient
-# (dhcp-client) and arping (iputils).
+# (dhcp-client) and arping (iputils), or network-manager (--network nm).
 PACKAGES="kernel-default dracut qemu-x86 busybox-static nvme-cli \
 e2fsprogs jq iproute2 kmod systemd-networkd meson ninja gcc git \
-pkgconf-pkg-config dhcp-client iputils"
+pkgconf-pkg-config dhcp-client iputils NetworkManager"
 
 usage() {
     echo "usage: $0 NAME HOSTNQN HOSTID [--recreate] [--image IMAGE]" >&2

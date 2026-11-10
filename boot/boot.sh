@@ -6,8 +6,9 @@
 #           [--nvme-tree DIR | --nvme-package] [--dracut-module DIR]
 #           [--source cmdline|static|legacy|none] [--hostonly]
 #           [--no-host-identity] [--append ARGS] [--timeout SECONDS]
-#           [--nbft FILE] [--network networkd|legacy] [--ip-dev DEV]
+#           [--nbft FILE] [--network networkd|legacy|nm] [--ip-dev DEV]
 #           [--nic user|tap --guest-ip IP/PREFIX --gateway GW [--vlan ID]]
+#           [--nm-generator FILE]
 #           [--slot N]
 #   boot.sh --build-only --nvme-tree DIR
 #
@@ -31,7 +32,8 @@
 #                  the kernel command line (rd.nvmf.hostnqn/hostid).
 # --no-host-identity  not even that: the initrd has no host identity
 # --network        the initrd's network module: networkd (systemd-networkd,
-#                  the default) or legacy (network-legacy: dhclient, ifup)
+#                  the default), legacy (network-legacy: dhclient, ifup)
+#                  or nm (network-manager)
 # --ip-dev         the interface of the guest's ip= (without --nbft):
 #                  eth0 (the default) or its MAC address in the BOOTIF
 #                  form, 52-54-00-12-34-56 (network-legacy only)
@@ -43,6 +45,8 @@
 #                  and the guest's network is on VLAN ID (the NBFT's HFI
 #                  is boot.py's). The host forwards and NATs the tap's
 #                  subnets to the target (boot.py, ensure_tap_network).
+# --nm-generator   use FILE as nm-initrd-generator (a NetworkManager tree's,
+#                  boot.py build_nm) instead of the package's
 # --slot           the slot of 'lab boot' this container belongs to
 #                  (default 1), recorded in the results
 # --build-only     only build the tree of --nvme-tree, install nothing,
@@ -64,8 +68,9 @@ IDENTITY=1
 INSTALLED=/root/lab-boot-installed.txt
 SOURCE=cmdline TIMEOUT=240 NBFT='' SLOT=1 BUILD_ONLY='' NETWORK=networkd IP_DEV=eth0
 NIC=user GUEST_IP=10.0.2.15/24 GATEWAY=10.0.2.2 VLAN=0
+NM_GENERATOR=''
 # The dracut modules a --dracut-module's tree may bring along
-SIBLINGS="35network-legacy 11systemd-networkd"
+SIBLINGS="35network-legacy 11systemd-networkd 35network-manager"
 # The guest's NIC; nvmelab/boot.py writes the same into the HFI of an NBFT.
 GUEST_MAC=52:54:00:12:34:56 GUEST_PCI_DEV=3
 usage() { sed -n '4,9p' "$0" >&2; exit 2; }
@@ -90,6 +95,7 @@ while [ $# -gt 0 ]; do
         --guest-ip) GUEST_IP=$2; shift ;;
         --gateway) GATEWAY=$2; shift ;;
         --vlan) VLAN=$2; shift ;;
+        --nm-generator) NM_GENERATOR=$2; shift ;;
         --build-only) BUILD_ONLY=1 ;;
         *) usage ;;
     esac
@@ -195,6 +201,17 @@ for m in $SIBLINGS; do
         cp -a "/root/package-modules/$m" /usr/lib/dracut/modules.d/
     fi
 done
+# The package's nm-initrd-generator, saved before the first replacement,
+# or --nm-generator's
+NM_GEN=/usr/libexec/nm-initrd-generator
+if [ -x "$NM_GEN" ]; then
+    [ -e /root/package-modules/nm-initrd-generator ] || {
+        mkdir -p /root/package-modules
+        cp -a "$NM_GEN" /root/package-modules/nm-initrd-generator
+    }
+    cp -a "${NM_GENERATOR:-/root/package-modules/nm-initrd-generator}" \
+        "$NM_GEN" || fail "no nm-initrd-generator $NM_GENERATOR"
+fi
 
 rm -rf /etc/nvme/discovery.conf /etc/nvme/config.json \
     /etc/nvme/nvme-fabrics.conf /etc/nvme/nvme-fabrics.conf.d \
@@ -230,6 +247,7 @@ esac
 case $NETWORK in
     networkd) NETMOD=systemd-networkd ;;
     legacy) NETMOD=network-legacy ;;
+    nm) NETMOD=network-manager ;;
     *) usage ;;
 esac
 if [ -n "$HOSTONLY" ]; then

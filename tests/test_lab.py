@@ -373,7 +373,7 @@ class BootTest(unittest.TestCase):
                             (dict(source='legacy'), 'needs --hostonly'),
                             (dict(source='bogus'), "bad --source"),
                             (dict(tree='t', package=True), 'exclude'),
-                            (dict(network='nm'), 'bad network'),
+                            (dict(network='connman'), 'bad network'),
                             (dict(ip_dev='eth0;reboot'), 'bad ip_dev')):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaisesRegex(ConfigError, msg):
@@ -922,7 +922,15 @@ class ScenarioTest(unittest.TestCase):
             s, boot.Tree(package=True).keys), 'old')
         self.assertIsNone(scenario.xfail_reason(
             s, boot.Tree('shutdown-units').keys))
-        self.assertEqual(boot.Tree('t', version='v3.2').keys, ('v3.2', 't'))
+        self.assertEqual(boot.Tree('t', version='v3.2').keys,
+                         ('v3.2', 't', 'nm-package'))
+        self.assertEqual(boot.Tree('t', nm='nm-x').keys, ('t', 'nm-nm-x'))
+        s = scenario.load(self.write(
+            '[xfail_on]\n"nm-package" = "no libnvme 3 support"\n'))
+        self.assertEqual(scenario.xfail_reason(s, boot.Tree('t').keys),
+                         'no libnvme 3 support')
+        self.assertIsNone(scenario.xfail_reason(
+            s, boot.Tree('t', nm='nm-x').keys))
 
     def test_applies(self):
         s = scenario.load(self.write('tags = ["nbft", "nvme-cli-3"]\n'))
