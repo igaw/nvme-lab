@@ -20,4 +20,5 @@ install() {
     inst_multiple dd mkdir ln
     inst_hook pre-trigger 10 "$moddir/labfc-target.sh"
     inst_hook initqueue/finished 90 "$moddir/labfc-finished.sh"
+    inst_hook cleanup 99 "$moddir/labfc-report.sh"
 }
