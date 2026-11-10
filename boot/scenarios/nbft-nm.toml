@@ -1,0 +1,15 @@
+# An NBFT boot with NetworkManager in the initrd: dracut writes ip= and
+# ifname=nbft0:MAC for the HFI, and nm-initrd-generator, seeing ifname=
+# nbft*, leaves the NBFT to it (NetworkManager f0d6b339b). On a tap: no
+# DHCP to fall back on.
+name = "NBFT boot with NetworkManager"
+tags = ["nbft", "nm"]
+
+[boot]
+nbft = true
+nic = "tap"
+network = "nm"
+
+[expect]
+result = "pass"
+controllers = ["root"]

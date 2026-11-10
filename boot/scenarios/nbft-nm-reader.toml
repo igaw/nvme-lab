@@ -1,0 +1,18 @@
+# rd.nvmf.nm with nvme-cli 2: dracut writes no ip= for the HFI,
+# nm-initrd-generator reads the NBFT itself with libnvme 1 (dlopen of
+# libnvme.so.1, in the initrd as nvme's) and matches the HFI's interface
+# by its MAC address: no rename.
+name = "NBFT boot, NetworkManager reads the NBFT (rd.nvmf.nm), nvme-cli 2"
+tags = ["nbft", "nm", "nvme-cli-2"]
+xfail_on = { "nm-nm-libnvme3" = "this NetworkManager is built for libnvme 3 (nvme-cli 3): it loads libnvme3.so.1 only" }
+
+[boot]
+nbft = true
+nic = "tap"
+network = "nm"
+append = ["rd.nvmf.nm"]
+
+[expect]
+result = "pass"
+controllers = ["root"]
+iface_names = { nbft0 = "" }

@@ -1,0 +1,19 @@
+# The pre-OS model's NBFT boot over VLAN 10 with NetworkManager:
+# nm-initrd-generator reads the NBFT, makes the VLAN connection on the
+# HFI's interface (matched by its MAC address) itself, named eth0.10;
+# nothing is renamed.
+name = "pre-OS NBFT boot over a VLAN with NetworkManager, no rename"
+tags = ["pre-os", "nbft", "nvme-cli-3", "nm", "vlan"]
+xfail_on = { "nm-package" = "NetworkManager 1.58 loads libnvme.so.1 only", "review-preos" = "libnvme reads every interface as VLAN 0 (get_vlan_id): nvme-cli branch nbft-vlan-id" }
+
+[boot]
+nbft = true
+vlan = 10
+network = "nm"
+
+[expect]
+result = "pass"
+controllers = ["root"]
+owners = { root = "pre-os" }
+host_iface = { root = "eth0.10" }
+iface_names = { nbft0 = "" }

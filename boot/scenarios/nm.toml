@@ -1,0 +1,12 @@
+# The target on the command line, the initrd's network set up by
+# NetworkManager (nm-initrd-generator from ip=).
+name = "rd.nvmf.discover= with NetworkManager"
+tags = ["cmdline", "nm"]
+
+[boot]
+source = "cmdline"
+network = "nm"
+
+[expect]
+result = "pass"
+controllers = ["root"]

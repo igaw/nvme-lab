@@ -1,0 +1,23 @@
+# The pre-OS model's NBFT boot with NetworkManager in the initrd:
+# nm-initrd-generator reads the NBFT itself with libnvme 3 and matches the
+# HFI's interface by its MAC address, nothing is renamed; nvme connects
+# through eth0 and records it for the OS environment.
+#
+# Needs a NetworkManager that loads libnvme 3 (NetworkManager branch
+# nbft-libnvme3, 'lab boot test --nm'): Tumbleweed's 1.58.1 loads
+# libnvme.so.1 only, which nvme-cli 3 doesn't have.
+name = "pre-OS NBFT boot with NetworkManager, no rename"
+tags = ["pre-os", "nbft", "nvme-cli-3", "nm"]
+xfail_on = { "nm-package" = "NetworkManager 1.58 loads libnvme.so.1 (nvme_nbft_read@LIBNVME_1_5), nvme-cli 3 has libnvme3.so.1 only" }
+
+[boot]
+nbft = true
+nic = "tap"
+network = "nm"
+
+[expect]
+result = "pass"
+controllers = ["root"]
+owners = { root = "pre-os" }
+host_iface = { root = "eth0" }
+iface_names = { nbft0 = "" }
