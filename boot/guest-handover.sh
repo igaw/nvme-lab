@@ -179,6 +179,8 @@ since() { [ -n "$after" ] && tail -n "+$after" "$C"; }
 
 if grep -qx 'booted yes' "$OUT/state.txt" \
         && grep -qx 'powered_off yes' "$OUT/state.txt"; then
+    # As boot.sh: lsinitrd.txt stays, the initrd of a passed case goes
+    rm -f "$OUT/initrd.img"
     echo "RESULT=PASS $NAME"
     cat "$OUT/state.txt"
     exit 0

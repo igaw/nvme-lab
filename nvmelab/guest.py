@@ -25,6 +25,7 @@ The pieces, in boot/:
   boots the guest and writes what happened to state.txt.
 """
 
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -230,7 +231,11 @@ def run_handover(cfg, host, s, tree, slot, env, name, out, module):
         image += ['--lose-trsvcid', env.trsvcid(last)]
     if g.get('restart'):
         image.append('--restart')
-    done = remote.run(cfg, host, image)
+    try:
+        done = remote.run(cfg, host, image)
+    finally:
+        # The tree and its build are in the root now: 25 MB a case
+        remote.run(cfg, host, ['rm', '-rf', '--', src])
     if done.returncode:
         log = remote.run(cfg, host, f'tail -20 {shlex.quote(outdir)}/log',
                          capture_output=True, encoding='utf-8',
@@ -270,6 +275,12 @@ def parse_handover(text):
         elif key:
             facts[key] = value
     return facts
+
+
+def _ktime(line):
+    """The kernel time of a console line, or None."""
+    m = re.search(r'\[\s*(\d+\.\d+)\]', line)
+    return float(m.group(1)) if m else None
 
 
 def _kv(words):
@@ -355,10 +366,17 @@ def handover_verdict(s, facts, root_nqn):
     for r in early[:2]:
         problems.append(f'a controller was removed before the root was '
                         f'unmounted: {r}')
-    for line in facts['error'][:3]:
+    # A keep-alive in flight when the shutdown initramfs deletes the
+    # controller fails with a transport error (FC aborts it): teardown,
+    # not a lost network, which times out before any disconnect
+    errors = [line for line in facts['error']
+              if not (disc != '-' and 'nvme_keep_alive_end_io' in line and
+                      _ktime(line) is not None and
+                      _ktime(line) >= float(disc))]
+    for line in errors[:3]:
         problems.append(f'console: {line}')
-    if len(facts['error']) > 3:
-        problems.append(f"and {len(facts['error']) - 3} more such lines")
+    if len(errors) > 3:
+        problems.append(f"and {len(errors) - 3} more such lines")
     return problems
 
 
