@@ -58,6 +58,67 @@ NETWORKS = ('networkd', 'legacy')
 GUEST_MAC = '52:54:00:12:34:56'
 GUEST_PCI_DEV = 3
 GUEST_IP, GUEST_PREFIX, GUEST_GATEWAY = '10.0.2.15', 24, '10.0.2.2'
+# The guest's NIC: QEMU's user network (slirp), or a tap device on the
+# host (labtapN for slot N), which can carry a VLAN: slirp drops tagged
+# frames. The tap's subnets, 10.100.N.0/24 untagged and 10.101.N.0/24 on
+# the VLAN, reach the target through the host's NAT (ensure_tap_network).
+NICS = ('user', 'tap')
+TAP_NET = '10.100.0.0/15'
+
+
+def guest_net(slot, nic='user', vlan=0):
+    """(address, prefix, gateway) of the guest's NIC in SLOT; the
+    gateway is the host's end of the tap."""
+    if nic == 'user':
+        return GUEST_IP, GUEST_PREFIX, GUEST_GATEWAY
+    net = 101 if vlan else 100
+    return f'10.{net}.{slot.n}.2', 24, f'10.{net}.{slot.n}.1'
+
+
+def check_nic(nic, vlan):
+    if nic not in NICS:
+        raise ConfigError(f"bad nic '{nic}': {', '.join(NICS)}")
+    if not 0 <= vlan <= 4094:
+        raise ConfigError(f'bad vlan {vlan}: 1-4094, 0 for none')
+    if vlan and nic != 'tap':
+        raise ConfigError('a vlan needs nic = "tap": the user network '
+                          'drops tagged frames')
+
+
+TAP_NETWORK_FILE = '/etc/systemd/network/10-lab-tap.network'
+TAP_NETWORK = """\
+# nvme-lab: the guests' taps (labtapN) and their VLANs are lab boot's
+[Match]
+Name=labtap*
+
+[Link]
+Unmanaged=yes
+"""
+
+
+def ensure_tap_network(cfg, host):
+    """What the guests on taps need on HOST: systemd-networkd leaves the
+    taps alone (a catch-all .network, e.g. Name=!lo with DHCP, takes them
+    over and removes the address boot.sh gives them), 8021q for the
+    VLANs, the forwarding of their subnets (Docker's FORWARD policy is
+    DROP, its DOCKER-USER chain comes first) and NAT to the target, which
+    knows no route back. Idempotent, and under a lock: the boots of a
+    run call it side by side."""
+    rules = [('filter', 'DOCKER-USER', f'-s {TAP_NET} -j ACCEPT'),
+             ('filter', 'DOCKER-USER', f'-d {TAP_NET} -j ACCEPT'),
+             ('nat', 'POSTROUTING',
+              f'-s {TAP_NET} ! -d {TAP_NET} -j MASQUERADE')]
+    unit = shlex.quote(TAP_NETWORK)
+    script = [f'{{ [ ! -d /etc/systemd/network ] || printf %s {unit} '
+              f'| cmp -s - {TAP_NETWORK_FILE} || {{ printf %s {unit} '
+              f'> {TAP_NETWORK_FILE} && {{ networkctl reload 2>/dev/null '
+              f'|| true; }}; }}; }}',
+              'modprobe 8021q']
+    for table, chain, rule in rules:
+        script.append(f'{{ iptables -t {table} -C {chain} {rule} 2>/dev/null '
+                      f'|| iptables -t {table} -I {chain} {rule}; }}')
+    remote.run(cfg, host, ['flock', '/run/lab-boot-tap.lock', 'sh', '-c',
+                           ' && '.join(script)], check=True)
 
 
 def upload_argv(cfg, host, dest):
@@ -155,15 +216,18 @@ def resolve_ssns_spec(spec, extra, slot=Slot()):
 
 
 def nbft_table(target, root=True, ssns=(), discovery=(), extra=None,
-               slot=Slot()):
+               slot=Slot(), nic='user', vlan=0):
     """The NBFT of a boot case in SLOT: the guest's NIC as the HFI, the
     root subsystem (unless not ROOT) and the SSNS specs of 'lab boot run
     --nbft-ssns' as the SSNS descriptors, discovery controllers given as
-    [TRADDR:]TRSVCID. EXTRA: the port of the extra subsystem."""
+    [TRADDR:]TRSVCID. EXTRA: the port of the extra subsystem. NIC and
+    VLAN: the guest's NIC (guest_net()) and the HFI's VLAN."""
     traddr, trsvcid = target
     ssns = [resolve_ssns_spec(s, extra, slot) for s in ssns]
-    hfi = nbft.Hfi(mac=GUEST_MAC, ipaddr=GUEST_IP, prefix=GUEST_PREFIX,
-                   gateway=GUEST_GATEWAY, pci_sbdf=GUEST_PCI_DEV << 3)
+    check_nic(nic, vlan)
+    ipaddr, prefix, gateway = guest_net(slot, nic, vlan)
+    hfi = nbft.Hfi(mac=GUEST_MAC, ipaddr=ipaddr, prefix=prefix,
+                   gateway=gateway, vlan=vlan, pci_sbdf=GUEST_PCI_DEV << 3)
     table = nbft.Table(host_nqn=slot.host_nqn, host_id=slot.host_id,
                        hfis=[hfi])
     if root:
@@ -195,7 +259,7 @@ def nbft_table(target, root=True, ssns=(), discovery=(), extra=None,
 def run_argv(name, target, tree=None, package=False, module=None,
              source='cmdline', hostonly=False, append=None, timeout=None,
              nbft_file=None, host_identity=True, network='networkd',
-             ip_dev=None, slot=Slot()):
+             ip_dev=None, nic='user', vlan=0, slot=Slot()):
     """The docker exec of one boot case in SLOT; MODULE is the overlay's
     directory and NBFT_FILE the table in the container."""
     if source not in SOURCES:
@@ -232,6 +296,13 @@ def run_argv(name, target, tree=None, package=False, module=None,
         if not re.fullmatch(r'[A-Za-z0-9.:_-]+', ip_dev):
             raise ConfigError(f"bad ip_dev '{ip_dev}'")
         args += ['--ip-dev', ip_dev]
+    check_nic(nic, vlan)
+    if nic != 'user':
+        ipaddr, prefix, gateway = guest_net(slot, nic, vlan)
+        args += ['--nic', nic, '--guest-ip', f'{ipaddr}/{prefix}',
+                 '--gateway', gateway]
+        if vlan:
+            args += ['--vlan', str(vlan)]
     return exec_argv(slot, 'boot.sh', *args)
 
 
@@ -348,6 +419,7 @@ def setup(cfg, host, target_host, recreate=False, count=1):
             setup_container(cfg, host, slot, recreate=True, image=IMAGE)
     # A fault of an interrupted run
     faults.clear_network(cfg, host)
+    ensure_tap_network(cfg, host)
     for slot in wanted:
         setup_slot(cfg, host, tc, traddr, target_host, slot)
 
@@ -371,8 +443,9 @@ def nbft_path(name):
 
 
 # The modules next to a --dracut-module in its tree (modules.d) that boot.sh
-# uses with it: network-legacy, for the boots with network = "legacy".
-SIBLINGS = ('35network-legacy',)
+# uses with it: the network modules of the boots (network = "legacy" and
+# networkd), whose handling of what nvmf writes is part of the test.
+SIBLINGS = ('35network-legacy', '11systemd-networkd')
 
 
 def upload_siblings(cfg, host, module, dest):
@@ -402,8 +475,12 @@ def run(cfg, host, name, module=None, nbft_options=None, fault_specs=(),
         upload(cfg, host, module, dest)
         overlay = f'{CONTAINER_DIR}/modules/{name}'
         upload_siblings(cfg, host, module, f'{dest}.siblings')
+    if kwargs.get('nic', 'user') == 'tap':
+        ensure_tap_network(cfg, host)
     if nbft_options is not None:
-        data = nbft_table(target, extra=extra, slot=slot, **nbft_options)
+        data = nbft_table(target, extra=extra, slot=slot,
+                          nic=kwargs.get('nic', 'user'),
+                          vlan=kwargs.get('vlan', 0), **nbft_options)
         on_host, table = nbft_path(name)
         remote.run(cfg, host, f'mkdir -p {BOOT_DIR}/nbft && '
                    f'cat > {shlex.quote(on_host)}', input=data, check=True)

@@ -7,6 +7,7 @@
 #           [--source cmdline|static|legacy|none] [--hostonly]
 #           [--no-host-identity] [--append ARGS] [--timeout SECONDS]
 #           [--nbft FILE] [--network networkd|legacy] [--ip-dev DEV]
+#           [--nic user|tap --guest-ip IP/PREFIX --gateway GW [--vlan ID]]
 #           [--slot N]
 #   boot.sh --build-only --nvme-tree DIR
 #
@@ -18,8 +19,8 @@
 #                  an earlier tree, e.g. a dracut configuration, don't
 #                  reach the initrd.
 # --dracut-module  use DIR as dracut's 74nvmf module (default: the
-#                  package's), and DIR.siblings/35network-legacy, if
-#                  there, as network-legacy
+#                  package's), and the modules in DIR.siblings, if there
+#                  (network-legacy, systemd-networkd), as those
 # --source         where the initrd learns the target from:
 #   cmdline  rd.nvmf.discover= on the kernel command line (default)
 #   static   /etc/nvme/nvme-fabrics.conf (nvme-cli 3), needs --hostonly
@@ -34,6 +35,14 @@
 # --ip-dev         the interface of the guest's ip= (without --nbft):
 #                  eth0 (the default) or its MAC address in the BOOTIF
 #                  form, 52-54-00-12-34-56 (network-legacy only)
+# --nic            the guest's NIC: user (QEMU's user network, 10.0.2.15/24
+#                  via 10.0.2.2, the default) or tap: the tap device
+#                  labtapSLOT on the host, made for the boot, with GW
+#                  (--gateway) on it and the guest at --guest-ip; with
+#                  --vlan ID, GW is on the VLAN interface labtapSLOT.ID
+#                  and the guest's network is on VLAN ID (the NBFT's HFI
+#                  is boot.py's). The host forwards and NATs the tap's
+#                  subnets to the target (boot.py, ensure_tap_network).
 # --slot           the slot of 'lab boot' this container belongs to
 #                  (default 1), recorded in the results
 # --build-only     only build the tree of --nvme-tree, install nothing,
@@ -54,8 +63,9 @@ IDENTITY=1
 # What the last tree installed (meson's install log)
 INSTALLED=/root/lab-boot-installed.txt
 SOURCE=cmdline TIMEOUT=240 NBFT='' SLOT=1 BUILD_ONLY='' NETWORK=networkd IP_DEV=eth0
+NIC=user GUEST_IP=10.0.2.15/24 GATEWAY=10.0.2.2 VLAN=0
 # The dracut modules a --dracut-module's tree may bring along
-SIBLINGS=35network-legacy
+SIBLINGS="35network-legacy 11systemd-networkd"
 # The guest's NIC; nvmelab/boot.py writes the same into the HFI of an NBFT.
 GUEST_MAC=52:54:00:12:34:56 GUEST_PCI_DEV=3
 usage() { sed -n '4,9p' "$0" >&2; exit 2; }
@@ -76,6 +86,10 @@ while [ $# -gt 0 ]; do
         --slot) SLOT=$2; shift ;;
         --network) NETWORK=$2; shift ;;
         --ip-dev) IP_DEV=$2; shift ;;
+        --nic) NIC=$2; shift ;;
+        --guest-ip) GUEST_IP=$2; shift ;;
+        --gateway) GATEWAY=$2; shift ;;
+        --vlan) VLAN=$2; shift ;;
         --build-only) BUILD_ONLY=1 ;;
         *) usage ;;
     esac
@@ -193,7 +207,13 @@ CMDLINE="$CMDLINE rd.retry=10 rd.neednet=1"
 # shell until the timeout
 CMDLINE="$CMDLINE rd.shell=0 rd.emergency=poweroff"
 if [ -z "$NBFT" ]; then
-    CMDLINE="$CMDLINE ip=10.0.2.15::10.0.2.2:255.255.255.0:guest:$IP_DEV:none"
+    # A prefix of 24, as boot.py gives
+    if [ "$VLAN" != 0 ]; then
+        CMDLINE="$CMDLINE ip=${GUEST_IP%/*}::$GATEWAY:255.255.255.0:guest:$IP_DEV.$VLAN:none"
+        CMDLINE="$CMDLINE vlan=$IP_DEV.$VLAN:$IP_DEV"
+    else
+        CMDLINE="$CMDLINE ip=${GUEST_IP%/*}::$GATEWAY:255.255.255.0:guest:$IP_DEV:none"
+    fi
 fi
 case $SOURCE in
     cmdline)
@@ -240,10 +260,32 @@ if [ -n "$NBFT" ]; then
 else
     set --
 fi
+case $NIC in
+    user) NETDEV=user,id=n0 ;;
+    tap)
+        # The tap of the slot, anew: one an interrupted run left may
+        # carry an old VLAN or address
+        TAP=labtap$SLOT
+        ip link del "$TAP" 2>/dev/null
+        ip tuntap add dev "$TAP" mode tap || fail "no tap $TAP"
+        trap 'ip link del "$TAP" 2>/dev/null' EXIT
+        ip link set "$TAP" up
+        if [ "$VLAN" != 0 ]; then
+            ip link add link "$TAP" name "$TAP.$VLAN" type vlan id "$VLAN" \
+                || fail "no VLAN $VLAN on $TAP"
+            ip link set "$TAP.$VLAN" up
+            ip addr add "$GATEWAY/${GUEST_IP#*/}" dev "$TAP.$VLAN"
+        else
+            ip addr add "$GATEWAY/${GUEST_IP#*/}" dev "$TAP"
+        fi
+        NETDEV=tap,id=n0,ifname=$TAP,script=no,downscript=no
+        ;;
+    *) usage ;;
+esac
 timeout "$TIMEOUT" qemu-system-x86_64 -enable-kvm -m 1024 -smp 2 \
     -nographic -no-reboot -kernel "/boot/vmlinuz-$KVER" \
     -initrd "$OUT/initrd.img" -append "$CMDLINE" \
-    -netdev user,id=n0 \
+    -netdev "$NETDEV" \
     -device "virtio-net-pci,netdev=n0,mac=$GUEST_MAC,addr=$GUEST_PCI_DEV" \
     "$@" > "$OUT/console.txt" 2>&1
 

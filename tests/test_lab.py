@@ -346,6 +346,28 @@ class BootTest(unittest.TestCase):
         self.assertEqual(opts[opts.index('--ip-dev') + 1],
                          '52-54-00-12-34-56')
 
+    def test_guest_net(self):
+        self.assertEqual(boot.guest_net(slots.Slot(3)),
+                         ('10.0.2.15', 24, '10.0.2.2'))
+        self.assertEqual(boot.guest_net(slots.Slot(3), 'tap'),
+                         ('10.100.3.2', 24, '10.100.3.1'))
+        self.assertEqual(boot.guest_net(slots.Slot(3), 'tap', 10),
+                         ('10.101.3.2', 24, '10.101.3.1'))
+
+    def test_run_argv_tap(self):
+        opts = boot.run_argv('c1', self.TARGET, nic='tap', vlan=10,
+                             slot=slots.Slot(2))[5:]
+        self.assertEqual(opts[opts.index('--nic') + 1], 'tap')
+        self.assertEqual(opts[opts.index('--guest-ip') + 1], '10.101.2.2/24')
+        self.assertEqual(opts[opts.index('--gateway') + 1], '10.101.2.1')
+        self.assertEqual(opts[opts.index('--vlan') + 1], '10')
+        for kwargs, msg in ((dict(vlan=10), 'needs nic'),
+                            (dict(nic='tap', vlan=5000), 'bad vlan'),
+                            (dict(nic='bridge'), 'bad nic')):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ConfigError, msg):
+                    boot.run_argv('c1', self.TARGET, **kwargs)
+
     def test_run_argv_checks(self):
         for kwargs, msg in ((dict(source='static'), 'needs --hostonly'),
                             (dict(source='legacy'), 'needs --hostonly'),
