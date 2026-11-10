@@ -42,10 +42,11 @@ PACKAGE_MAJOR = 2
 # What guest-boot.sh reports as "error" lines: a shutdown that took the
 # network away under a mount (nvme-cli#3309: error -101, keep-alive
 # failures, I/O that finds no path), I/O timeouts and stuck tasks or
-# stop jobs. The defaults of the scenarios.
+# stop jobs, a failed unmount of the data file system (not of /run/lock,
+# which Debian's lvm2 can keep busy). The defaults of the scenarios.
 BAD_SIGNS = ('error -101', 'nvme_keep_alive_end_io', 'no available path',
              'I/O tag timeout', 'blocked for more than', 'A stop job',
-             'Failed unmounting', 'timed out')
+             'Failed unmounting srv-data', 'timed out')
 SHUTDOWN_LIMIT = 60
 TIMEOUT = 300
 
