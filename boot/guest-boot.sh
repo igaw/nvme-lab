@@ -64,10 +64,12 @@ fail() { echo "SETUP FAILED: $*" | tee -a "$OUT/log" >&2; exit 2; }
     [ -n "$CTRL" ] && [ "$CTRL" != null ] || { echo "not connected"; exit 1; }
     for NS in "/sys/class/nvme/$CTRL/"nvme*n1; do NS=${NS##*/}; break; done
     BLK=$(echo "$NS" | sed 's/c[0-9]*n/n/')
-    if [ ! -b "/dev/$BLK" ]; then
-        IFS=: read -r MAJOR MINOR < "/sys/class/block/$BLK/dev"
-        mknod "/dev/$BLK" b "$MAJOR" "$MINOR"
-    fi
+    # Always made anew: a node an earlier connect left has an old
+    # device number, which the kernel, shared by all slots, may have
+    # given to another slot's namespace since
+    IFS=: read -r MAJOR MINOR < "/sys/class/block/$BLK/dev"
+    rm -f "/dev/$BLK"
+    mknod "/dev/$BLK" b "$MAJOR" "$MINOR"
     wipefs -q -a "/dev/$BLK"
     mkfs.ext4 -q -F -L lab-data -U "$DATA_UUID" "/dev/$BLK" || exit 1
     nvme disconnect -n "$NQN" >/dev/null
@@ -116,7 +118,7 @@ first() {   # the kernel time of the first line after poweroff matching $1
         "ifdown=$(first 'LAB-EVENT ifdown-done eth0')"
     if [ -n "$after" ]; then
         tail -n "+$after" "$C" | grep -E \
-            'error -101|nvme_keep_alive_end_io|no available path|I/O tag [0-9]+ .* timeout|blocked for more than|A stop job is running|Failed unmounting|timed out' \
+            'error -101|nvme_keep_alive_end_io|no available path|I/O tag [0-9]+ .* timeout|blocked for more than|A stop job is running|Failed unmounting srv-data|timed out' \
             | head -20 | sed 's/^/error /'
         tail -n "+$after" "$C" | grep -E \
             'LAB-EVENT|unmounting filesystem|Removing ctrl|srv-data|networking\.service|NetworkManager|nvmf-autoconnect|nvme-discoverd|nvmf-connect|lvm2|reboot: Power down' \

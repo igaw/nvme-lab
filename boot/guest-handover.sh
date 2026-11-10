@@ -85,10 +85,12 @@ restore_root() {
     [ -n "$CTRL" ] && [ "$CTRL" != null ] || { echo "not connected"; exit 1; }
     for NS in "/sys/class/nvme/$CTRL/"nvme*n1; do NS=${NS##*/}; break; done
     BLK=$(echo "$NS" | sed 's/c[0-9]*n/n/')
-    if [ ! -b "/dev/$BLK" ]; then
-        IFS=: read -r MAJOR MINOR < "/sys/class/block/$BLK/dev"
-        mknod "/dev/$BLK" b "$MAJOR" "$MINOR"
-    fi
+    # Always made anew: a node an earlier connect left has an old
+    # device number, which the kernel, shared by all slots, may have
+    # given to another slot's namespace since
+    IFS=: read -r MAJOR MINOR < "/sys/class/block/$BLK/dev"
+    rm -f "/dev/$BLK"
+    mknod "/dev/$BLK" b "$MAJOR" "$MINOR"
     MNT=/mnt/lab-handover-root
     mkdir -p "$MNT"
     wipefs -q -a "/dev/$BLK"
@@ -168,7 +170,7 @@ since() { [ -n "$after" ] && tail -n "+$after" "$C"; }
         echo "removed $(echo "$l" | ktime) $(echo "$l" | sed -n 's/.*\(nvme[0-9]*\): Removing ctrl.*/\1/p')"
     done
     since | grep -E \
-        'nvme_keep_alive_end_io|no available path|I/O tag [0-9]+ .* timeout|blocked for more than|A stop job is running|Failed unmounting|timed out|Cannot umount|I/O error' \
+        'nvme_keep_alive_end_io|no available path|I/O tag [0-9]+ .* timeout|blocked for more than|A stop job is running|timed out|Cannot umount|I/O error' \
         | head -20 | sed 's/^/error /'
     grep -E 'LAB-EVENT|nvmf: disconnect|Removing ctrl|unmounting filesystem|nvme-discoverd|Switching root|reboot: Power down' "$C" \
         | head -80 | sed 's/^/event /'

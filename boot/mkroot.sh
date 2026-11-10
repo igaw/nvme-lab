@@ -34,10 +34,12 @@ for NS in "/sys/class/nvme/$CTRL/"nvme*n1; do NS=${NS##*/}; break; done
 # With native multipath the block device is nvmeXnY, not nvmeXcZnY.
 BLK=$(echo "$NS" | sed 's/c[0-9]*n/n/')
 # The container's /dev does not follow devices that appear later.
-if [ ! -b "/dev/$BLK" ]; then
-    IFS=: read -r MAJOR MINOR < "/sys/class/block/$BLK/dev"
-    mknod "/dev/$BLK" b "$MAJOR" "$MINOR"
-fi
+# Always made anew: a node an earlier connect left has an old
+# device number, which the kernel, shared by all slots, may have
+# given to another slot's namespace since
+IFS=: read -r MAJOR MINOR < "/sys/class/block/$BLK/dev"
+rm -f "/dev/$BLK"
+mknod "/dev/$BLK" b "$MAJOR" "$MINOR"
 
 mkfs.ext4 -q -F -L lab-boot-root -U "$UUID" "/dev/$BLK"
 mkdir -p "$MNT"
