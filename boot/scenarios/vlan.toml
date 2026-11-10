@@ -1,0 +1,12 @@
+# The guest's network on VLAN 10 (tap), from the command line:
+# ip=...:eth0.10 and vlan=eth0.10:eth0.
+name = "rd.nvmf.discover= over a VLAN"
+tags = ["cmdline", "vlan"]
+
+[boot]
+source = "cmdline"
+vlan = 10
+
+[expect]
+result = "pass"
+controllers = ["root"]

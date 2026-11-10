@@ -1,0 +1,14 @@
+# An NBFT whose HFI is on VLAN 10: dracut writes vlan=nbft0.10:nbft0 and
+# the ip= for nbft0.10; the HFI is renamed to nbft0, or, with an nvme of
+# the pre-OS model and networkd, nbft0 is an alternative name of it (see
+# pre-os-nbft-vlan).
+name = "NBFT boot over a VLAN"
+tags = ["nbft", "vlan"]
+
+[boot]
+nbft = true
+vlan = 10
+
+[expect]
+result = "pass"
+controllers = ["root"]

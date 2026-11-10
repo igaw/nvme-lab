@@ -1,0 +1,13 @@
+# The guest on a tap device of the host instead of QEMU's user network:
+# the base of the VLAN scenarios, which need it (slirp drops tagged
+# frames). The host forwards the tap's subnet to the target with NAT.
+name = "rd.nvmf.discover= with the guest on a tap device"
+tags = ["cmdline", "tap"]
+
+[boot]
+source = "cmdline"
+nic = "tap"
+
+[expect]
+result = "pass"
+controllers = ["root"]

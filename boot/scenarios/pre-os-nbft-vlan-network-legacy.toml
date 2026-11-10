@@ -1,0 +1,19 @@
+# The pre-OS model's NBFT boot over VLAN 10 with network-legacy: vlan=
+# needs a name for the VLAN's parent, so dracut renames an HFI with a
+# VLAN to nbft0 even with an nvme of the pre-OS model.
+name = "pre-OS NBFT boot over a VLAN, network-legacy, renamed"
+tags = ["pre-os", "nbft", "nvme-cli-3", "vlan", "network-legacy"]
+
+xfail_on = { "review-preos" = "libnvme reads every interface as VLAN 0 (get_vlan_id), the HFI gets no host_iface: nvme-cli branch nbft-vlan-id" }
+
+[boot]
+nbft = true
+vlan = 10
+network = "legacy"
+
+[expect]
+result = "pass"
+controllers = ["root"]
+owners = { root = "pre-os" }
+host_iface = { root = "nbft0.10" }
+iface_names = { nbft0 = "nbft0" }

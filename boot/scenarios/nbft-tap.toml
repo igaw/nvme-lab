@@ -1,0 +1,12 @@
+# An NBFT boot with the guest on a tap device: the HFI on the tap's
+# subnet, untagged. The base of the NBFT VLAN scenarios.
+name = "NBFT boot with the guest on a tap device"
+tags = ["nbft", "tap"]
+
+[boot]
+nbft = true
+nic = "tap"
+
+[expect]
+result = "pass"
+controllers = ["root"]
