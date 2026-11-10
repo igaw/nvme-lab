@@ -31,6 +31,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import hashlib
 import io
 import queue
 import re
@@ -285,12 +286,38 @@ def setup_slot(cfg, host, tc, traddr, target_host, slot):
     env.paths |= path_names(tc.ports(slot.root_nqn), ['root', 'root2'])
     env.paths |= path_names(tc.ports(slot.extra_nqn), ['extra'])
     write_env(cfg, host, env)
-    remote.run(cfg, host, exec_argv(slot, 'mkroot.sh', traddr,
-                                    env.trsvcid('root'), slot.root_nqn,
-                                    ROOT_UUID), check=True)
+    make_root(cfg, host, slot, env)
     print(f'lab-boot slot {slot.n}: root on {slot.root_nqn} at '
           f"{traddr}:{env.trsvcid('root')} and :{env.trsvcid('root2')}, "
           f"extra at :{env.trsvcid('extra')}", flush=True)
+
+
+def mkroot_sum():
+    return hashlib.sha256((SCRIPTS / 'mkroot.sh').read_bytes()).hexdigest()
+
+
+def make_root(cfg, host, slot, env):
+    """SLOT's root file system, by mkroot.sh of this checkout; its
+    checksum goes next to it, see ensure_root()."""
+    remote.run(cfg, host, exec_argv(slot, 'mkroot.sh', env.traddr,
+                                    env.trsvcid('root'), slot.root_nqn,
+                                    ROOT_UUID), check=True)
+    remote.run(cfg, host, f'echo {mkroot_sum()} > {slot.dir}/mkroot.sum',
+               check=True)
+
+
+def ensure_root(cfg, host, slot):
+    """Make SLOT's root anew if mkroot.sh changed since it was made: the
+    root's /init writes the report the scenarios check, and a root of an
+    older mkroot.sh would report without what a newer one added. Call
+    after the scripts were uploaded."""
+    out = remote.run(cfg, host, ['cat', f'{slot.dir}/mkroot.sum'],
+                     capture_output=True, encoding='utf-8')
+    if out.stdout.strip() == mkroot_sum():
+        return
+    print(f'lab-boot slot {slot.n}: mkroot.sh changed, making the root '
+          'anew', flush=True)
+    make_root(cfg, host, slot, read_env(cfg, host, slot))
 
 
 def setup(cfg, host, target_host, recreate=False, count=1):
@@ -345,6 +372,7 @@ def run(cfg, host, name, module=None, nbft_options=None, fault_specs=(),
     overlay = table = None
     # The scripts of this checkout, not the ones of the last setup
     upload(cfg, host, SCRIPTS, f'{slot.dir}/scripts')
+    ensure_root(cfg, host, slot)
     if module:
         dest = f'{BOOT_DIR}/modules/{sync.check_name(name)}'
         upload(cfg, host, module, dest)
@@ -538,6 +566,7 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
     for slot in available[:jobs]:
         # The scripts of this checkout, also for the builds below
         upload(cfg, host, SCRIPTS, f'{slot.dir}/scripts')
+        ensure_root(cfg, host, slot)
         free.put(slot)
     lock = threading.Lock()
 
