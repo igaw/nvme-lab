@@ -214,8 +214,11 @@ several copies at once: copy its TOML N times into a directory and run
 in `nvmelab/scenario.py`). `make check` loads every shipped scenario and
 checks its options, placeholders and faults; then run it on the lab with
 the versions it applies to. A known failure gets `xfail` (always) or
-`xfail_on` (some releases) with the reason and a link; XPASS, a known
-failure that passes, fails the run so that the scenario gets updated.
+`xfail_on` (some releases, or a tree by its name, or `package`) with
+the reason and a link; XPASS, a known failure that passes, fails the run
+so that the scenario gets updated. A failure that is a race, which a
+night of runs shows (some passes, some failures), gets `xfail_strict =
+false` too: its XPASS is reported but doesn't fail the run.
 
 **Clean up**: `lab boot teardown` removes the containers, the
 subsystems and `/root/scratch/lab-boot` with all results (ask first).

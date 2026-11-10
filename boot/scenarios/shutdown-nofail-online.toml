@@ -6,6 +6,8 @@
 name = "shutdown with an NVMe/TCP mount (nofail), autoconnect after the network"
 tags = ["shutdown", "guest"]
 xfail = "a mount on NVMe-oF without _netdev is not supported: nothing orders its unmount before networking.service stops (keep-alive timeouts, jbd2 blocked, the power-off waits for ctrl_loss_tmo, 531s with Debian's 2.13), and with the unit fixes before the disconnect: 'no available path - failing I/O' (nvme-cli#3309)"
+# A race: now and then the unmount comes before the disconnect, and the case passes.
+xfail_strict = false
 
 [guest]
 connect = "autoconnect"

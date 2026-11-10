@@ -847,6 +847,13 @@ class ScenarioTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, 'xfail_on'):
             scenario.load(self.write('xfail_on = "v3.2"\n'))
 
+    def test_xfail_strict(self):
+        s = scenario.load(self.write('xfail = "a race"\nxfail_strict = false\n'))
+        self.assertEqual(scenario.outcome(s, [], None), ('XPASS', False))
+        self.assertEqual(scenario.outcome(s, ['e'], None), ('XFAIL', False))
+        with self.assertRaisesRegex(ConfigError, 'xfail_strict'):
+            scenario.load(self.write('xfail_strict = "no"\n'))
+
     def test_xfail_on_tree_name(self):
         s = scenario.load(self.write(
             '[xfail_on]\n"suite-master" = "not merged"\n"package" = "old"\n'))

@@ -4,6 +4,8 @@
 name = "shutdown with an NVMe/TCP mount (nofail), nvme-discoverd, nvme-fabrics loaded at boot"
 tags = ["shutdown", "guest", "nvme-cli-3", "discoverd"]
 xfail = "nvme-discoverd's connection unit disconnects before the unmount of a mount without _netdev: 'block nvme1n1: no available path - failing I/O' (3.2, master; #4332 case B)"
+# A race: now and then the unmount comes before the disconnect, and the case passes.
+xfail_strict = false
 
 [guest]
 connect = "discoverd"

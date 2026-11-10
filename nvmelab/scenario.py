@@ -56,6 +56,8 @@ nvme-cli releases given by their tags, e.g. a release with a bug that is
 fixed later; it applies to a tree at exactly that tag ('lab sync'
 records it). A key may also name a tree by its name (e.g. suite-master,
 until a fix is merged) or "package", the distribution's nvme-cli.
+xfail_strict = false says the failure is a race: an XPASS is reported,
+but doesn't fail the run.
 
 The tags nvme-cli-2 and nvme-cli-3 say which major version a scenario
 needs: lab boot test leaves it out for a tree of the other one.
@@ -137,8 +139,8 @@ GUEST_NETWORK = ('ifupdown', 'networkmanager')
 GUEST_ROOT = ('local', 'nvme', 'fc')
 GUEST_CONNECT = ('autoconnect', 'discoverd')
 GUEST_CONFIG = ('discovery.conf', 'nvme-fabrics.conf')
-TOP_KEYS = {'name', 'tags', 'xfail', 'xfail_on', 'boot', 'fault', 'expect',
-            'guest'}
+TOP_KEYS = {'name', 'tags', 'xfail', 'xfail_on', 'xfail_strict', 'boot',
+            'fault', 'expect', 'guest'}
 
 # An identity the target doesn't let in
 OTHER_HOST_ID = '0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e'
@@ -152,6 +154,7 @@ class Scenario:
     tags: list = field(default_factory=list)
     xfail: str | None = None
     xfail_on: dict = field(default_factory=dict)
+    xfail_strict: bool = True
     boot: dict = field(default_factory=dict)
     faults: list = field(default_factory=list)
     expect: dict = field(default_factory=dict)
@@ -181,7 +184,10 @@ def load(path):
     s = Scenario(id=path.stem, name=data.get('name', path.stem),
                  tags=data.get('tags', []), xfail=data.get('xfail'),
                  xfail_on=data.get('xfail_on', {}),
+                 xfail_strict=data.get('xfail_strict', True),
                  boot=data.get('boot', {}), expect=data.get('expect', {}))
+    if not isinstance(s.xfail_strict, bool):
+        raise ConfigError(f'{path}: xfail_strict must be true or false')
     if not isinstance(s.xfail_on, dict) or not all(
             isinstance(v, str) for v in s.xfail_on.values()):
         raise ConfigError(f'{path}: xfail_on must map tags to reasons')
@@ -379,5 +385,5 @@ def applies(s, major):
 def outcome(s, errors, keys=None):
     """PASS, FAIL, XFAIL or XPASS, and whether that counts as failed."""
     if xfail_reason(s, keys):
-        return ('XFAIL', False) if errors else ('XPASS', True)
+        return ('XFAIL', False) if errors else ('XPASS', s.xfail_strict)
     return ('FAIL', True) if errors else ('PASS', False)

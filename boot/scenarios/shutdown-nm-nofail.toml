@@ -3,6 +3,8 @@
 name = "shutdown with an NVMe/TCP mount (nofail), autoconnect, NetworkManager"
 tags = ["shutdown", "guest", "networkmanager"]
 xfail = "a mount on NVMe-oF without _netdev is not supported: up to 3.2 and on master, nvmf-autoconnect.service does not want network-online.target and races NetworkManager at boot (no mount); with the unit fixes it connects, and the disconnect runs before the unmount: 'no available path - failing I/O' (nvme-cli#3309). NetworkManager leaves eth0 up at the shutdown."
+# A race: now and then the unmount comes before the disconnect, and the case passes.
+xfail_strict = false
 
 [guest]
 network = "networkmanager"

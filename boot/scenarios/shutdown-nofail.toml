@@ -8,6 +8,8 @@
 name = "shutdown with an NVMe/TCP mount (nofail), autoconnect"
 tags = ["shutdown", "guest"]
 xfail = "a mount on NVMe-oF without _netdev is not supported: nothing orders it against the network or the disconnect. Up to 3.2 and with Debian 2.13, nvmf-autoconnect.service doesn't want network-online.target: 'failed to connect socket: -101', no mount; when it connects (master), the shutdown hangs. With the unit fixes it connects, and the disconnect runs before the unmount: 'no available path - failing I/O' (nvme-cli#3309)"
+# A race: now and then the unmount comes before the disconnect, and the case passes.
+xfail_strict = false
 
 [guest]
 connect = "autoconnect"
