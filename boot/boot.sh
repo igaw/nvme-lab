@@ -82,6 +82,17 @@ uninstall_tree() {
     rm -f "$INSTALLED"
 }
 
+# The distribution's nvme-cli and libnvme anew. A tree's install wrote
+# over their files and uninstall_tree removed them: without this a slot
+# whose last tree was only built has no nvme, which the scripts that run
+# in the container need (mkroot.sh, guest-handover.sh).
+reinstall_package() {
+    # shellcheck disable=SC2046 # one word per package
+    zypper -q --non-interactive install -y -f \
+        $(rpm -qa --qf '%{NAME}\n' | grep -E '^(nvme-cli|libnvme)') \
+        > /dev/null
+}
+
 # Build TREE in its build directory, DIR/.lab-boot, which all slots share
 # (their containers are copies of one): one slot at a time, also for the
 # install, which writes the build directory's install log.
@@ -110,7 +121,8 @@ if [ -n "$BUILD_ONLY" ]; then
     [ -n "$TREE" ] || usage
     # Nothing of another tree's install for meson to find
     uninstall_tree
-    build_tree
+    build_tree || exit
+    reinstall_package
     exit
 fi
 if [ -z "$NAME" ] || [ -z "$TARGET" ] || [ -z "$UUID" ]; then
@@ -136,7 +148,7 @@ fail() { echo "SETUP FAILED: $*" | tee -a "$OUT/log" >&2; exit 2; }
         build_tree "$INSTALLED" || exit 2
         ldconfig
     elif [ -n "$PACKAGE" ]; then
-        zypper -q --non-interactive install -y -f nvme-cli || exit 2
+        reinstall_package || exit 2
     fi
     nvme version
 } > "$OUT/log" 2>&1 || fail "installing nvme-cli, see $OUT/log"
