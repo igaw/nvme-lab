@@ -31,6 +31,8 @@ A scenario is a TOML file in boot/scenarios/:
     ctrl_loss_tmo = { root = "off" }
     hostnqn = { root = "{hostnqn}" }
     pre_os_conf = 1
+    host_iface = { root = "eth0" }
+    iface_names = { nbft0 = "eth0" }
 
 Placeholders, in append, nbft_ssns, nbft_discovery and the expected host
 NQNs: {traddr}, {trsvcid} (the root's first path), {root2} (its second
@@ -48,6 +50,11 @@ registry owner ("" for unowned), its ctrl_loss_tmo as sysfs shows it
 against the state the root's /init reports (state.txt, see
 boot/mkroot.sh). pre_os_conf is the number of connections the initrd
 recorded in /run/nvme/pre-os.conf.d for nvme-discoverd (nvme-cli#4328).
+host_iface is the interface of every controller of a subsystem, from
+its address in sysfs ("" for none). iface_names maps the names nbftN to
+the interface the kernel resolves them to: nbftN itself when the initrd
+renamed the interface (dracut's ifname=nbftN:MAC), another one when
+nbftN is an alternative name and the interface kept its name.
 
 A scenario with xfail is expected to fail for the reason given: it is
 reported as XFAIL while it does, and as XPASS, a failure, once it passes,
@@ -128,7 +135,7 @@ BOOT_KEYS = {'source': str, 'hostonly': bool, 'host_identity': bool,
              'nbft_no_root': bool, 'append': list, 'timeout': int}
 EXPECT_KEYS = {'result': str, 'controllers': list, 'paths': dict,
                'owners': dict, 'ctrl_loss_tmo': dict, 'hostnqn': dict,
-               'pre_os_conf': int}
+               'pre_os_conf': int, 'host_iface': dict, 'iface_names': dict}
 FAULT_KEYS = {'kind': str, 'path': str, 'state': str}
 GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
               'wait_online': bool, 'modules_load': bool, 'dirty_mb': int,
@@ -318,11 +325,24 @@ def parse_pre_os_conf(text):
     return conf
 
 
-def verdict(s, passed, state, roles, values=None, pre_os_conf=None):
+def parse_iface_names(text):
+    """state.txt: {nbftN: the interface the kernel resolves it to}; the
+    interface itself when it was renamed to nbftN, another when nbftN is
+    an alternative name of it."""
+    names = {}
+    for line in text.splitlines():
+        words = line.split()
+        if len(words) == 3 and words[0] == 'iface-name':
+            names[words[1]] = words[2]
+    return names
+
+
+def verdict(s, passed, state, roles, values=None, pre_os_conf=None,
+            iface_names=None):
     """What is wrong with the run of S (empty: nothing). PASSED: the
     root's /init ran; STATE: parse_state(); ROLES: {nqn: role}; VALUES:
     the placeholders, for the expected host NQNs; PRE_OS_CONF:
-    parse_pre_os_conf()."""
+    parse_pre_os_conf(); IFACE_NAMES: parse_iface_names()."""
     errors = []
     want = s.expect.get('result', 'pass')
     if (want == 'pass') != passed:
@@ -344,7 +364,7 @@ def verdict(s, passed, state, roles, values=None, pre_os_conf=None):
         if got != count:
             errors.append(f'{subsys}: {got} paths, expected {count}')
     for key, what in (('owners', 'owner'), ('ctrl_loss_tmo', 'ctrl_loss_tmo'),
-                      ('hostnqn', 'hostnqn')):
+                      ('hostnqn', 'hostnqn'), ('host_iface', 'host_iface')):
         for subsys, want in s.expect.get(key, {}).items():
             if values is not None:
                 want = expand(str(want), values)
@@ -358,6 +378,10 @@ def verdict(s, passed, state, roles, values=None, pre_os_conf=None):
         if got != s.expect['pre_os_conf']:
             errors.append(f'pre-os.conf: {got} connections, expected '
                           f"{s.expect['pre_os_conf']}")
+    for name, want in s.expect.get('iface_names', {}).items():
+        got = (iface_names or {}).get(name, '')
+        if got != want:
+            errors.append(f"{name}: interface '{got}', expected '{want}'")
     return errors
 
 

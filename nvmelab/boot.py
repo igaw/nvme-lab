@@ -483,7 +483,8 @@ def test_one(cfg, host, s, tree, slot, name, out, **options):
         env = read_env(cfg, host, slot)
         errors = scenario.verdict(s, rc == 0, state, slot.roles,
                                   scenario.placeholders(env),
-                                  scenario.parse_pre_os_conf(text))
+                                  scenario.parse_pre_os_conf(text),
+                                  scenario.parse_iface_names(text))
     # A case that could not be set up is no expected failure
     result, bad = (('FAIL', True) if rc not in (0, 1)
                    else scenario.outcome(s, errors, tree.keys))

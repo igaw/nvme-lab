@@ -766,6 +766,26 @@ class ScenarioTest(unittest.TestCase):
         self.assertEqual(scenario.verdict(s, True, good, self.ROLES),
                          ['boot passed, expected fail'])
 
+    def test_iface_names(self):
+        text = (f'ctrl nvme0 tcp {SLOT.root_nqn} host_iface=eth0\n'
+                'iface-name nbft0 eth0\n')
+        names = scenario.parse_iface_names(text)
+        self.assertEqual(names, {'nbft0': 'eth0'})
+        state = scenario.parse_state(text)
+        s = scenario.load(self.write(
+            '[expect]\nhost_iface = { root = "eth0" }\n'
+            'iface_names = { nbft0 = "eth0" }\n'))
+        self.assertEqual(scenario.verdict(s, True, state, self.ROLES,
+                                          iface_names=names), [])
+        s = scenario.load(self.write(
+            '[expect]\nhost_iface = { root = "nbft0" }\n'
+            'iface_names = { nbft0 = "nbft0", nbft1 = "eth1" }\n'))
+        self.assertEqual(scenario.verdict(s, True, state, self.ROLES,
+                                          iface_names=names), [
+            "root nvme0: host_iface 'eth0', expected 'nbft0'",
+            "nbft0: interface 'eth0', expected 'nbft0'",
+            "nbft1: interface '', expected 'eth1'"])
+
     GUEST_STATE = ('mounted yes\npoweroff yes\npowered_off yes\n'
                    'shutdown_seconds 4\n'
                    'order umount=30.1 disconnect=30.5 ifdown=31.0\n'

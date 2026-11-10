@@ -12,3 +12,7 @@ nbft = true
 result = "pass"
 controllers = ["root"]
 owners = { root = "" }
+# The legacy way: dracut renames the HFI to nbft0 (ifname=nbft0:MAC),
+# nvme-cli 2 sets no host_iface.
+host_iface = { root = "" }
+iface_names = { nbft0 = "nbft0" }

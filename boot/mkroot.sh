@@ -8,12 +8,16 @@
 # the initrd handed over and powers the guest off. Its report, between
 # LAB-BOOT-STATE-BEGIN and LAB-BOOT-STATE-END, has one line per NVMe
 # controller, "ctrl NAME TRANSPORT SUBSYSNQN KEY=VALUE..." with its
-# state, trsvcid, ctrl_loss_tmo and hostnqn, and one per entry of the
+# state, trsvcid, ctrl_loss_tmo, hostnqn and host_iface, and one per entry of the
 # nvme-cli registry (/run moves along at switch_root), "registry NAME
 # owner=OWNER" (empty: unowned), and one per connection the initrd
 # recorded for the OS environment (nvme-cli#4328, /run/nvme/pre-os.conf.d),
-# "pre-os-conf FILE CONTROLLER-LINE" (a file per host). Then it prints "LAB-BOOT-ROOT-OK
-# <kernel command line>".
+# "pre-os-conf FILE CONTROLLER-LINE" (a file per host), and one per name
+# nbftN the kernel resolves, "iface-name nbftN LINK" with the interface
+# that has it: LINK is nbftN when the initrd renamed the interface to it,
+# another when nbftN is an alternative name (the kernel's name lookup
+# resolves both, sysfs only shows the first). Then it prints
+# "LAB-BOOT-ROOT-OK <kernel command line>".
 set -eu
 
 [ $# -eq 4 ] || { echo "usage: $0 TRADDR TRSVCID NQN UUID" >&2; exit 2; }
@@ -65,7 +69,13 @@ for c in /sys/class/nvme/nvme*; do
     trsvcid=$(attr "$c" address | $B sed -n 's/.*trsvcid=\([0-9]*\).*/\1/p')
     echo "ctrl ${c##*/} $(attr "$c" transport) $(attr "$c" subsysnqn)" \
         "state=$(attr "$c" state) trsvcid=$trsvcid" \
-        "ctrl_loss_tmo=$(attr "$c" ctrl_loss_tmo) hostnqn=$(attr "$c" hostnqn)"
+        "ctrl_loss_tmo=$(attr "$c" ctrl_loss_tmo) hostnqn=$(attr "$c" hostnqn)" \
+        "host_iface=$(attr "$c" address | $B sed -n 's/.*host_iface=\([^,]*\).*/\1/p')"
+done
+for n in 0 1 2 3; do
+    link=$($B ip -o link show dev "nbft$n" 2>/dev/null \
+        | $B sed -n 's/^[0-9]*: \([^:@]*\).*/\1/p')
+    [ -z "$link" ] || echo "iface-name nbft$n $link"
 done
 for e in /run/nvme/registry/*; do
     [ -d "$e" ] || continue

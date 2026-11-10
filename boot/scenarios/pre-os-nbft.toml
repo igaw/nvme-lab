@@ -13,3 +13,8 @@ controllers = ["root", "extra"]
 owners = { root = "pre-os", extra = "pre-os" }
 ctrl_loss_tmo = { root = "off", extra = "off" }
 pre_os_conf = 0
+# The interface of the HFI keeps its name, nbft0 is an alternative name
+# of it (systemd-networkd in the initrd): the connections and the
+# recorded ones name eth0, which the real root keeps.
+host_iface = { root = "eth0", extra = "eth0" }
+iface_names = { nbft0 = "eth0" }
