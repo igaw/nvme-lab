@@ -14,11 +14,12 @@
 set -eu
 
 CI_IMAGE=ghcr.io/linux-nvme/tumbleweed:latest
-# systemd-networkd: Tumbleweed has no dhclient, so dracut's network-legacy
-# can't be used; the initrd uses systemd and networkd with a static ip=.
+# The initrd uses systemd and systemd-networkd with a static ip=, or
+# network-legacy (boot.sh --network legacy), which needs dhclient
+# (dhcp-client) and arping (iputils).
 PACKAGES="kernel-default dracut qemu-x86 busybox-static nvme-cli \
 e2fsprogs jq iproute2 kmod systemd-networkd meson ninja gcc git \
-pkgconf-pkg-config"
+pkgconf-pkg-config dhcp-client iputils"
 
 usage() {
     echo "usage: $0 NAME HOSTNQN HOSTID [--recreate] [--image IMAGE]" >&2
@@ -62,6 +63,12 @@ else
     docker exec "$NAME" cp -a /usr/lib/dracut/modules.d/74nvmf \
         /root/74nvmf.package
 fi
+
+# The packages added to PACKAGES since the container was made
+# shellcheck disable=SC2086
+docker exec "$NAME" sh -c "rpm -q $PACKAGES >/dev/null 2>&1 || \
+    zypper -q --non-interactive install -y --no-recommends \
+    --force-resolution $PACKAGES" >/dev/null
 
 docker exec "$NAME" sh -c "mkdir -p /etc/nvme && \
     echo '$HOSTNQN' > /etc/nvme/hostnqn && echo '$HOSTID' > /etc/nvme/hostid"

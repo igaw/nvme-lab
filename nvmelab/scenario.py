@@ -17,6 +17,8 @@ A scenario is a TOML file in boot/scenarios/:
     nbft_no_root = false
     append = ["rd.nvmf.discover=tcp,{traddr},,{extra}"]
     timeout = 240
+    network = "networkd"        # the initrd's: networkd or legacy
+    ip_dev = "eth0"             # the interface of the ip= (no NBFT)
 
     [[fault]]                   # while the guest boots, see faults.py
     kind = "tcp-refuse"         # port-removed, ana, tcp-refuse, tcp-drop
@@ -132,7 +134,8 @@ DIR = Path(__file__).resolve().parent.parent / 'boot' / 'scenarios'
 
 BOOT_KEYS = {'source': str, 'hostonly': bool, 'host_identity': bool,
              'nbft': bool, 'nbft_ssns': list, 'nbft_discovery': list,
-             'nbft_no_root': bool, 'append': list, 'timeout': int}
+             'nbft_no_root': bool, 'append': list, 'timeout': int,
+             'network': str, 'ip_dev': str}
 EXPECT_KEYS = {'result': str, 'controllers': list, 'paths': dict,
                'owners': dict, 'ctrl_loss_tmo': dict, 'hostnqn': dict,
                'pre_os_conf': int, 'host_iface': dict, 'iface_names': dict}
@@ -293,6 +296,8 @@ def run_options(s, env):
                 hostonly=b.get('hostonly', False),
                 host_identity=b.get('host_identity', True),
                 append=append or None, timeout=b.get('timeout'),
+                network=b.get('network', 'networkd'),
+                ip_dev=b.get('ip_dev'),
                 nbft_options=nbft, fault_specs=s.faults)
 
 

@@ -52,6 +52,7 @@ SCRIPTS = Path(__file__).resolve().parent.parent / 'boot'
 ROOT_PORTS, EXTRA_PORTS = 2, 1
 ROOT_UUID = 'b0936c83-d08a-4c81-bb63-efc6e619581f'
 SOURCES = ('cmdline', 'static', 'legacy', 'none')
+NETWORKS = ('networkd', 'legacy')
 
 # The guest's NIC and QEMU's user networking (boot.sh): the HFI of an NBFT
 GUEST_MAC = '52:54:00:12:34:56'
@@ -193,7 +194,8 @@ def nbft_table(target, root=True, ssns=(), discovery=(), extra=None,
 
 def run_argv(name, target, tree=None, package=False, module=None,
              source='cmdline', hostonly=False, append=None, timeout=None,
-             nbft_file=None, host_identity=True, slot=Slot()):
+             nbft_file=None, host_identity=True, network='networkd',
+             ip_dev=None, slot=Slot()):
     """The docker exec of one boot case in SLOT; MODULE is the overlay's
     directory and NBFT_FILE the table in the container."""
     if source not in SOURCES:
@@ -203,6 +205,8 @@ def run_argv(name, target, tree=None, package=False, module=None,
                           "hostonly initrd carries the host's /etc/nvme")
     if tree and package:
         raise ConfigError('--nvme and --nvme-package exclude each other')
+    if network not in NETWORKS:
+        raise ConfigError(f"bad network '{network}': {', '.join(NETWORKS)}")
     args = ['--name', sync.check_name(name), '--target', ':'.join(target),
             '--root-uuid', ROOT_UUID, '--source', source,
             '--slot', str(slot.n)]
@@ -222,6 +226,12 @@ def run_argv(name, target, tree=None, package=False, module=None,
         args += ['--timeout', str(timeout)]
     if nbft_file:
         args += ['--nbft', nbft_file]
+    if network != 'networkd':
+        args += ['--network', network]
+    if ip_dev:
+        if not re.fullmatch(r'[A-Za-z0-9.:_-]+', ip_dev):
+            raise ConfigError(f"bad ip_dev '{ip_dev}'")
+        args += ['--ip-dev', ip_dev]
     return exec_argv(slot, 'boot.sh', *args)
 
 
@@ -360,6 +370,20 @@ def nbft_path(name):
     return f'{BOOT_DIR}/nbft/{name}', f'{CONTAINER_DIR}/nbft/{name}'
 
 
+# The modules next to a --dracut-module in its tree (modules.d) that boot.sh
+# uses with it: network-legacy, for the boots with network = "legacy".
+SIBLINGS = ('35network-legacy',)
+
+
+def upload_siblings(cfg, host, module, dest):
+    """SIBLINGS of MODULE's tree to DEST, for boot.sh; none: no DEST."""
+    remote.run(cfg, host, ['rm', '-rf', dest], check=True)
+    for m in SIBLINGS:
+        src = Path(module).resolve().parent / m
+        if src.is_dir():
+            upload(cfg, host, src, f'{dest}/{m}')
+
+
 def run(cfg, host, name, module=None, nbft_options=None, fault_specs=(),
         slot=Slot(), out=None, synced=False, **kwargs):
     """Boot case NAME in SLOT. NBFT_OPTIONS: the dict of nbft_table()'s
@@ -377,6 +401,7 @@ def run(cfg, host, name, module=None, nbft_options=None, fault_specs=(),
         dest = f'{BOOT_DIR}/modules/{sync.check_name(name)}'
         upload(cfg, host, module, dest)
         overlay = f'{CONTAINER_DIR}/modules/{name}'
+        upload_siblings(cfg, host, module, f'{dest}.siblings')
     if nbft_options is not None:
         data = nbft_table(target, extra=extra, slot=slot, **nbft_options)
         on_host, table = nbft_path(name)

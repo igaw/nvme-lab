@@ -6,7 +6,8 @@
 #           [--nvme-tree DIR | --nvme-package] [--dracut-module DIR]
 #           [--source cmdline|static|legacy|none] [--hostonly]
 #           [--no-host-identity] [--append ARGS] [--timeout SECONDS]
-#           [--nbft FILE] [--slot N]
+#           [--nbft FILE] [--network networkd|legacy] [--ip-dev DEV]
+#           [--slot N]
 #   boot.sh --build-only --nvme-tree DIR
 #
 # --nvme-tree      build the nvme-cli tree in DIR and install it
@@ -17,7 +18,8 @@
 #                  an earlier tree, e.g. a dracut configuration, don't
 #                  reach the initrd.
 # --dracut-module  use DIR as dracut's 74nvmf module (default: the
-#                  package's)
+#                  package's), and DIR.siblings/35network-legacy, if
+#                  there, as network-legacy
 # --source         where the initrd learns the target from:
 #   cmdline  rd.nvmf.discover= on the kernel command line (default)
 #   static   /etc/nvme/nvme-fabrics.conf (nvme-cli 3), needs --hostonly
@@ -27,6 +29,11 @@
 #                  /etc/nvme files. Otherwise the host identity goes on
 #                  the kernel command line (rd.nvmf.hostnqn/hostid).
 # --no-host-identity  not even that: the initrd has no host identity
+# --network        the initrd's network module: networkd (systemd-networkd,
+#                  the default) or legacy (network-legacy: dhclient, ifup)
+# --ip-dev         the interface of the guest's ip= (without --nbft):
+#                  eth0 (the default) or its MAC address in the BOOTIF
+#                  form, 52-54-00-12-34-56 (network-legacy only)
 # --slot           the slot of 'lab boot' this container belongs to
 #                  (default 1), recorded in the results
 # --build-only     only build the tree of --nvme-tree, install nothing,
@@ -46,7 +53,9 @@ NAME='' TARGET='' UUID='' TREE='' PACKAGE='' MODULE='' HOSTONLY='' APPEND=''
 IDENTITY=1
 # What the last tree installed (meson's install log)
 INSTALLED=/root/lab-boot-installed.txt
-SOURCE=cmdline TIMEOUT=240 NBFT='' SLOT=1 BUILD_ONLY=''
+SOURCE=cmdline TIMEOUT=240 NBFT='' SLOT=1 BUILD_ONLY='' NETWORK=networkd IP_DEV=eth0
+# The dracut modules a --dracut-module's tree may bring along
+SIBLINGS=35network-legacy
 # The guest's NIC; nvmelab/boot.py writes the same into the HFI of an NBFT.
 GUEST_MAC=52:54:00:12:34:56 GUEST_PCI_DEV=3
 usage() { sed -n '4,9p' "$0" >&2; exit 2; }
@@ -65,6 +74,8 @@ while [ $# -gt 0 ]; do
         --timeout) TIMEOUT=$2; shift ;;
         --nbft) NBFT=$2; shift ;;
         --slot) SLOT=$2; shift ;;
+        --network) NETWORK=$2; shift ;;
+        --ip-dev) IP_DEV=$2; shift ;;
         --build-only) BUILD_ONLY=1 ;;
         *) usage ;;
     esac
@@ -156,6 +167,20 @@ fail() { echo "SETUP FAILED: $*" | tee -a "$OUT/log" >&2; exit 2; }
 rm -rf /usr/lib/dracut/modules.d/74nvmf
 cp -a "${MODULE:-/root/74nvmf.package}" /usr/lib/dracut/modules.d/74nvmf \
     || fail "no dracut module ${MODULE:-/root/74nvmf.package}"
+# The modules of the module's tree that come along (MODULE.siblings, see
+# boot.py), else the package's: saved before the first overlay.
+for m in $SIBLINGS; do
+    [ -d "/root/package-modules/$m" ] || {
+        mkdir -p /root/package-modules
+        cp -a "/usr/lib/dracut/modules.d/$m" /root/package-modules/
+    }
+    rm -rf "/usr/lib/dracut/modules.d/$m"
+    if [ -n "$MODULE" ] && [ -d "$MODULE.siblings/$m" ]; then
+        cp -a "$MODULE.siblings/$m" /usr/lib/dracut/modules.d/
+    else
+        cp -a "/root/package-modules/$m" /usr/lib/dracut/modules.d/
+    fi
+done
 
 rm -rf /etc/nvme/discovery.conf /etc/nvme/config.json \
     /etc/nvme/nvme-fabrics.conf /etc/nvme/nvme-fabrics.conf.d \
@@ -168,7 +193,7 @@ CMDLINE="$CMDLINE rd.retry=10 rd.neednet=1"
 # shell until the timeout
 CMDLINE="$CMDLINE rd.shell=0 rd.emergency=poweroff"
 if [ -z "$NBFT" ]; then
-    CMDLINE="$CMDLINE ip=10.0.2.15::10.0.2.2:255.255.255.0:guest:eth0:none"
+    CMDLINE="$CMDLINE ip=10.0.2.15::10.0.2.2:255.255.255.0:guest:$IP_DEV:none"
 fi
 case $SOURCE in
     cmdline)
@@ -180,6 +205,11 @@ case $SOURCE in
         echo "--transport=tcp --traddr=$TRADDR --trsvcid=$TRSVCID" \
             > /etc/nvme/discovery.conf ;;
     none) ;;
+    *) usage ;;
+esac
+case $NETWORK in
+    networkd) NETMOD=systemd-networkd ;;
+    legacy) NETMOD=network-legacy ;;
     *) usage ;;
 esac
 if [ -n "$HOSTONLY" ]; then
@@ -198,7 +228,7 @@ CMDLINE="$CMDLINE $APPEND"
 echo "$CMDLINE" > "$OUT/cmdline"
 
 # shellcheck disable=SC2086
-dracut --force $HO --add "nvmf systemd-networkd" \
+dracut --force $HO --add "nvmf $NETMOD" \
     --add-drivers "nvme_tcp nvme_fabrics virtio_net virtio_pci ext4" \
     --kver "$KVER" "$OUT/initrd.img" > "$OUT/dracut.log" 2>&1 \
     || fail "dracut, see $OUT/dracut.log"

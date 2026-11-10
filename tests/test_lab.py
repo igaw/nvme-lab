@@ -335,14 +335,24 @@ class BootTest(unittest.TestCase):
         opts = boot.run_argv('c1', self.TARGET)[5:]
         self.assertEqual(opts[opts.index('--source') + 1], 'cmdline')
         for flag in ('--nvme-tree', '--nvme-package', '--dracut-module',
-                     '--hostonly', '--append', '--timeout'):
+                     '--hostonly', '--append', '--timeout', '--network',
+                     '--ip-dev'):
             self.assertNotIn(flag, opts)
+
+    def test_run_argv_network(self):
+        opts = boot.run_argv('c1', self.TARGET, network='legacy',
+                             ip_dev='52-54-00-12-34-56')[5:]
+        self.assertEqual(opts[opts.index('--network') + 1], 'legacy')
+        self.assertEqual(opts[opts.index('--ip-dev') + 1],
+                         '52-54-00-12-34-56')
 
     def test_run_argv_checks(self):
         for kwargs, msg in ((dict(source='static'), 'needs --hostonly'),
                             (dict(source='legacy'), 'needs --hostonly'),
                             (dict(source='bogus'), "bad --source"),
-                            (dict(tree='t', package=True), 'exclude')):
+                            (dict(tree='t', package=True), 'exclude'),
+                            (dict(network='nm'), 'bad network'),
+                            (dict(ip_dev='eth0;reboot'), 'bad ip_dev')):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaisesRegex(ConfigError, msg):
                     boot.run_argv('c1', self.TARGET, **kwargs)
@@ -765,6 +775,13 @@ class ScenarioTest(unittest.TestCase):
         self.assertEqual(scenario.verdict(s, False, {}, self.ROLES), [])
         self.assertEqual(scenario.verdict(s, True, good, self.ROLES),
                          ['boot passed, expected fail'])
+
+    def test_run_options_network(self):
+        s = scenario.load(self.write('[boot]\nnetwork = "legacy"\n'
+                                     'ip_dev = "52-54-00-12-34-56"\n'))
+        opts = scenario.run_options(s, self.env())
+        self.assertEqual((opts['network'], opts['ip_dev']),
+                         ('legacy', '52-54-00-12-34-56'))
 
     def test_iface_names(self):
         text = (f'ctrl nvme0 tcp {SLOT.root_nqn} host_iface=eth0\n'

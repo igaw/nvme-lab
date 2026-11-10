@@ -131,7 +131,7 @@ def cmd_boot_run(cfg, args):
                    source=source, hostonly=args.hostonly,
                    host_identity=not args.no_host_identity,
                    append=' '.join(args.append) or None,
-                   timeout=args.timeout)
+                   timeout=args.timeout, network=args.network)
     fault_specs = [faults.parse(f) for f in args.fault]
     slot = Slot(args.slot)
     if args.dry_run:
@@ -336,6 +336,10 @@ def parser():
                    'the NBFT (the default with one) or --append')
     b.add_argument('--hostonly', action='store_true',
                    help='a hostonly initrd (needed by static and legacy)')
+    b.add_argument('--network', choices=boot.NETWORKS, default='networkd',
+                   help="the initrd's network module: networkd "
+                   '(systemd-networkd, the default) or legacy '
+                   '(network-legacy)')
     b.add_argument('--no-host-identity', action='store_true',
                    help='no rd.nvmf.hostnqn/hostid on the command line of '
                    'an initrd that is not hostonly')
