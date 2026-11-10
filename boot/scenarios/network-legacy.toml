@@ -1,0 +1,12 @@
+# The target on the command line, the initrd's network set up by
+# network-legacy (ifup) instead of systemd-networkd.
+name = "rd.nvmf.discover= with network-legacy"
+tags = ["cmdline", "network-legacy"]
+
+[boot]
+source = "cmdline"
+network = "legacy"
+
+[expect]
+result = "pass"
+controllers = ["root"]

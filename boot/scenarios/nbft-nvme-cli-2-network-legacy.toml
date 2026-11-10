@@ -1,0 +1,14 @@
+# The legacy way with network-legacy: nvme-cli 2 doesn't follow the
+# pre-OS model, so dracut renames the HFI to nbft0 (ifname=nbft0:MAC).
+# Run with an nvme-cli 2 tree, e.g. v2.16.
+name = "NBFT boot with nvme-cli 2 and network-legacy, renamed"
+tags = ["nvme-cli-2", "network-legacy"]
+
+[boot]
+nbft = true
+network = "legacy"
+
+[expect]
+result = "pass"
+controllers = ["root"]
+iface_names = { nbft0 = "nbft0" }

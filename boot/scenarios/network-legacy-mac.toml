@@ -1,0 +1,16 @@
+# network-legacy with the interface of the ip= given by its MAC address
+# (the BOOTIF form: ip= splits at ':'), what the pre-OS model's NBFT boot
+# with network-legacy writes. (dracut's "wait for an interface named by
+# its MAC address" doesn't change the outcome here: with systemd and a
+# network root, the wait hook also ends when the root device appears.)
+name = "network-legacy, ip= for a MAC address"
+tags = ["cmdline", "network-legacy"]
+
+[boot]
+source = "cmdline"
+network = "legacy"
+ip_dev = "52-54-00-12-34-56"
+
+[expect]
+result = "pass"
+controllers = ["root"]
