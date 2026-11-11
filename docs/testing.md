@@ -205,6 +205,13 @@ on `nvme` (NAME is `PREFIX-TREE-SCENARIO` in a matrix, else
 | `state.txt` | what the root saw after switch-root: a `ctrl` line per controller (transport, NQN, state, trsvcid, ctrl_loss_tmo, hostnqn), a `registry` line per registry entry |
 | `slot` | the slot it booted in |
 
+A failed case also keeps its big files for a look (`initrd.img`, and
+`root.tar` or the guest's `disk.qcow2`); a passed one drops them. Every
+`lab boot test` removes those older than two days (`boot.KEEP_DAYS`),
+and stops when less than 5G are free on `nvme` (`boot.MIN_FREE_GB`, also
+for `lab boot run`): a full disk fails every case on its own ("No space
+left on device", "could not be set up").
+
 The dashboard links these files for every case that did not simply
 pass. To tell a flaky case from a broken one, run it again alone, and
 several copies at once: copy its TOML N times into a directory and run

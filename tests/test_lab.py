@@ -492,6 +492,26 @@ class BootTest(unittest.TestCase):
         finally:
             boot.existing_slots = orig
 
+    def test_free_space(self):
+        self.assertEqual(boot.free_gb(' Avail\n   28G\n'), 28)
+        self.assertIsNone(boot.free_gb(''))
+        argv = boot.prune_argv(2)
+        self.assertIn('-mtime +1 -delete', argv)
+        for name in boot.KEPT_FILES:
+            self.assertIn(f'-name {name}', argv)
+        self.assertNotIn('log', argv)
+
+        orig = boot.remote.run
+        try:
+            boot.remote.run = lambda *a, **k: subprocess.CompletedProcess(
+                a, 0, stdout=' Avail\n    3G\n')
+            host = config.Host(name='nvme', address='nvme')
+            with self.assertRaisesRegex(ConfigError, 'only 3G free'):
+                boot.check_space(None, host)
+            boot.check_space(None, host, need=3)
+        finally:
+            boot.remote.run = orig
+
     def test_stopped_slots(self):
         s1, s2, s3 = slots.slots(3)
         out = '/lab-boot-1 true\n/lab-boot-2 false\n'

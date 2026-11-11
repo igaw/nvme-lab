@@ -151,6 +151,7 @@ def cmd_boot_run(cfg, args):
             print(f"fault: {f['kind']} on {f['path']}")
         return 0
     boot.check_running(cfg, host, [slot])
+    boot.check_space(cfg, host)
     if args.nm:
         options['nm_generator'] = boot.build_nm(cfg, host, args.nm, slot)
     return boot.run(cfg, host, args.name, module=args.dracut_module,

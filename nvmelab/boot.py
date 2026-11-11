@@ -338,6 +338,51 @@ def stopped_slots(slots, inspect_output):
     return [s for s in slots if s.container not in running]
 
 
+# A failed case keeps its big files for a look (initrd.img, root.tar, the
+# guest's disk.qcow2); they go after this many days. Its log and state stay.
+KEEP_DAYS = 2
+KEPT_FILES = ('initrd.img', 'root.tar', 'disk.qcow2')
+# Free space a run needs on the CI host: a few initrds and builds.
+MIN_FREE_GB = 5
+
+
+def prune_argv(days=KEEP_DAYS):
+    """The command that removes the big files of failed cases older than
+    DAYS from the results."""
+    names = ' -o '.join(f'-name {shlex.quote(n)}' for n in KEPT_FILES)
+    return (f'find {BOOT_DIR}/out -type f \\( {names} \\) '
+            f'-mtime +{days - 1} -delete 2>/dev/null || :')
+
+
+def prune_kept(cfg, host, days=KEEP_DAYS):
+    """Remove the big files of failed cases older than DAYS."""
+    remote.run(cfg, host, prune_argv(days), capture_output=True)
+
+
+def free_gb(df_output):
+    """The available GB from 'df --output=avail -BG DIR'."""
+    for line in df_output.splitlines()[1:]:
+        value = line.strip().rstrip('G')
+        if value.isdigit():
+            return int(value)
+    return None
+
+
+def check_space(cfg, host, need=MIN_FREE_GB):
+    """Raise ConfigError when the CI host has less than NEED GB free for
+    the boots: builds and initrds would fail on their own otherwise
+    ('No space left on device', 'could not be set up')."""
+    done = remote.run(cfg, host, ['df', '--output=avail', '-BG',
+                                  f'{BOOT_DIR}'], capture_output=True,
+                      encoding='utf-8')
+    have = free_gb(done.stdout)
+    if have is not None and have < need:
+        raise ConfigError(f'{host.name}: only {have}G free in {BOOT_DIR}, '
+                          f'a run needs {need}G: look at {BOOT_DIR}/out '
+                          "(the kept files of failed cases) or 'docker "
+                          "system df'")
+
+
 def check_running(cfg, host, slots):
     """Raise ConfigError when a container of SLOTS isn't running, as
     after a reboot of HOST: each boot would fail on its own otherwise
@@ -720,6 +765,8 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
         raise ConfigError(f'-j {jobs}, but setup made {len(available)} '
                           f"slot(s): 'lab boot setup --slots {jobs}'")
     check_running(cfg, host, available[:jobs])
+    prune_kept(cfg, host)
+    check_space(cfg, host)
     infos = ([tree_info(cfg, host, t) for t in trees] if trees
              else [Tree(package=package)])
     for t in infos:
