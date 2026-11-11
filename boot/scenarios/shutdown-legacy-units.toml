@@ -12,7 +12,6 @@ tags = ["shutdown", "guest", "nvme-cli-3", "discoverd", "legacy-units"]
 
 [xfail_on]
 "v3.2" = "nvme-discoverd's units don't load nvme-fabrics (no mount), and the legacy units don't skip themselves while nvme-discoverd runs: nvmf-connect@ only for --device=none, nvmf-connect-nbft and nvmefc-boot-connections never (nvme-cli#4405)"
-"suite-master" = "nvme-discoverd's units don't load nvme-fabrics (no mount), and the legacy units don't skip themselves while nvme-discoverd runs: nvmf-connect@ only for --device=none, nvmf-connect-nbft and nvmefc-boot-connections never (nvme-cli#4405)"
 
 [guest]
 connect = "discoverd"

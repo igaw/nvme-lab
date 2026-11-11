@@ -10,7 +10,6 @@ tags = ["shutdown", "guest", "lvm2"]
 "v2.16" = "lvm2-monitor.service stops after networking.service, with the controller still connected (nothing disconnects it): lvm blocked, keep-alive timeouts, no power-off (nvme-cli#3309, lvmteam/lvm2#194; fixed by nvmf-autoconnect's ExecStop, nvme-cli#4405)"
 "v3.2" = "lvm2-monitor.service stops after networking.service, with the controller still connected (nothing disconnects it): lvm blocked, keep-alive timeouts, no power-off (nvme-cli#3309, lvmteam/lvm2#194; fixed by nvmf-autoconnect's ExecStop, nvme-cli#4405)"
 "package" = "lvm2-monitor.service stops after networking.service, with the controller still connected (nothing disconnects it): lvm blocked, keep-alive timeouts, no power-off (nvme-cli#3309, lvmteam/lvm2#194; fixed by nvmf-autoconnect's ExecStop, nvme-cli#4405)"
-"suite-master" = "lvm2-monitor.service stops after networking.service, with the controller still connected (nothing disconnects it): lvm blocked, keep-alive timeouts, no power-off (nvme-cli#3309, lvmteam/lvm2#194; fixed by nvmf-autoconnect's ExecStop, nvme-cli#4405)"
 
 [guest]
 connect = "autoconnect"
