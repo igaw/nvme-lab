@@ -6,8 +6,9 @@
 name = "shutdown with an NVMe/TCP mount (nofail,_netdev), nvme-discoverd"
 tags = ["shutdown", "guest", "nvme-cli-3", "discoverd"]
 [xfail_on]
-"v3.2" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch shutdown-units)"
-"suite-master" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch shutdown-units)"
+"v3.2" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch review/pre-os, the nvme-discoverd fixes)"
+"suite-master" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch review/pre-os, the nvme-discoverd fixes)"
+"autoconnect-fixes" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: 'nvme connect: Failed to scan topology: No such file or directory', retried forever, no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch review/pre-os, the nvme-discoverd fixes)"
 
 [guest]
 connect = "discoverd"

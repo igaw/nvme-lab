@@ -448,12 +448,14 @@ where nothing loads `nvme-fabrics` (`shutdown-discoverd`), and without
 `_netdev` they disconnect before the unmount: `no available path -
 failing I/O` (`shutdown-discoverd-nofail`, #4332 case B).
 
-nvme-cli branch `shutdown-units` fixes three of them:
-`nvme-discoverd.service` loads `nvme-fabrics`,
-`nvmf-autoconnect.service` wants `network-online.target`, and it
-disconnects its controllers when it stops, after the `_netdev`
-unmounts and before the network. `shutdown-lvm2` and
-`shutdown-discoverd` pass with it; they stay expected failures on the
+Three of them are fixed. The legacy autoconnect path (the udev rule
+and `nvmf-autoconnect.service`), nvme-cli branch `autoconnect-fixes`:
+the unit wants `network-online.target`, and it disconnects its
+controllers when it stops, after the `_netdev` unmounts and before the
+network. nvme-discoverd, in the nvme-discoverd fixes at the start of
+branch `review/pre-os` (the pre-OS series stacks on top):
+`nvme-discoverd.service` loads `nvme-fabrics`. `shutdown-lvm2` and
+`shutdown-discoverd` pass with them; they stay expected failures on the
 releases, Debian's package and `suite-master` (`xfail_on`, which names a
 tree by its release tag, its name or `package`). A mount without
 `_netdev` is not supported: with the fixes it connects, and the
