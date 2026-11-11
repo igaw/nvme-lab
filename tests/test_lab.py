@@ -492,6 +492,26 @@ class BootTest(unittest.TestCase):
         finally:
             boot.existing_slots = orig
 
+    def test_stopped_slots(self):
+        s1, s2, s3 = slots.slots(3)
+        out = '/lab-boot-1 true\n/lab-boot-2 false\n'
+        # lab-boot-3 is missing: docker inspect prints nothing for it
+        self.assertEqual(boot.stopped_slots([s1, s2, s3], out), [s2, s3])
+        self.assertEqual(boot.stopped_slots([s1], out), [])
+
+    def test_test_needs_running_slots(self):
+        orig = boot.existing_slots, boot.remote.run
+        try:
+            boot.existing_slots = lambda cfg, host: slots.slots(2)
+            boot.remote.run = lambda *a, **k: subprocess.CompletedProcess(
+                a, 1, stdout='/lab-boot-1 true\n/lab-boot-2 false\n')
+            host = config.Host(name='nvme', address='nvme')
+            with self.assertRaisesRegex(ConfigError,
+                                        'lab-boot-2 .*--slots 2'):
+                boot.test(None, host, [], jobs=2)
+        finally:
+            boot.existing_slots, boot.remote.run = orig
+
     def test_upload_argv(self):
         cfg = config.Config(hosts={}, ssh_key=None)
         host = config.Host('a', 'a.lan')

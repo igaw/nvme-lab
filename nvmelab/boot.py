@@ -326,6 +326,34 @@ def existing_slots(cfg, host):
     return [Slot(n) for n in sorted(found)]
 
 
+def stopped_slots(slots, inspect_output):
+    """The SLOTS whose container isn't running, from the output of
+    'docker inspect -f "{{.Name}} {{.State.Running}}"' (a missing
+    container prints nothing)."""
+    running = set()
+    for line in inspect_output.splitlines():
+        name, _, state = line.strip().lstrip('/').partition(' ')
+        if state == 'true':
+            running.add(name)
+    return [s for s in slots if s.container not in running]
+
+
+def check_running(cfg, host, slots):
+    """Raise ConfigError when a container of SLOTS isn't running, as
+    after a reboot of HOST: each boot would fail on its own otherwise
+    ('the guest did not mount ...')."""
+    done = remote.run(cfg, host, ['docker', 'inspect', '-f',
+                                  '{{.Name}} {{.State.Running}}',
+                                  *(s.container for s in slots)],
+                      capture_output=True, encoding='utf-8')
+    stopped = stopped_slots(slots, done.stdout)
+    if stopped:
+        names = ', '.join(s.container for s in stopped)
+        raise ConfigError(f'not running on {host.name}: {names} '
+                          f"(rebooted?): run 'lab boot setup "
+                          f"--slots {len(existing_slots(cfg, host))}'")
+
+
 def remove_slot(cfg, host, tc, slot):
     """Remove SLOT's container, subsystems and directory."""
     remote.run(cfg, host, ['docker', 'rm', '-f', slot.container],
@@ -691,6 +719,7 @@ def test(cfg, host, scenarios, prefix='t', module=None, trees=(),
     if jobs > len(available):
         raise ConfigError(f'-j {jobs}, but setup made {len(available)} '
                           f"slot(s): 'lab boot setup --slots {jobs}'")
+    check_running(cfg, host, available[:jobs])
     infos = ([tree_info(cfg, host, t) for t in trees] if trees
              else [Tree(package=package)])
     for t in infos:
