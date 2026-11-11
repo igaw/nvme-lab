@@ -5,14 +5,14 @@
 # (every event, not only the FC kickstart), nvmf-connect-nbft.service,
 # and nvmefc-boot-connections.service (when nvme-discoverd is enabled).
 # The guest has no FC HBA and no NBFT: the probe lifts the units' path
-# conditions, starts them and reads Result=. nvme-cli branch
-# autoconnect-fixes; nvme-discoverd also needs nvme-fabrics loaded there.
+# conditions, starts them and reads Result=. Fixed by nvme-cli#4405,
+# which also makes nvme-discoverd load nvme-fabrics.
 name = "nvme-discoverd with the legacy autoconnect units installed"
 tags = ["shutdown", "guest", "nvme-cli-3", "discoverd", "legacy-units"]
 
 [xfail_on]
-"v3.2" = "nvme-discoverd's units don't load nvme-fabrics (no mount), and the legacy units don't skip themselves while nvme-discoverd runs: nvmf-connect@ only for --device=none, nvmf-connect-nbft and nvmefc-boot-connections never (nvme-cli branch autoconnect-fixes)"
-"suite-master" = "nvme-discoverd's units don't load nvme-fabrics (no mount), and the legacy units don't skip themselves while nvme-discoverd runs: nvmf-connect@ only for --device=none, nvmf-connect-nbft and nvmefc-boot-connections never (nvme-cli branch autoconnect-fixes)"
+"v3.2" = "nvme-discoverd's units don't load nvme-fabrics (no mount), and the legacy units don't skip themselves while nvme-discoverd runs: nvmf-connect@ only for --device=none, nvmf-connect-nbft and nvmefc-boot-connections never (nvme-cli#4405)"
+"suite-master" = "nvme-discoverd's units don't load nvme-fabrics (no mount), and the legacy units don't skip themselves while nvme-discoverd runs: nvmf-connect@ only for --device=none, nvmf-connect-nbft and nvmefc-boot-connections never (nvme-cli#4405)"
 
 [guest]
 connect = "discoverd"

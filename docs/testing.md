@@ -465,7 +465,7 @@ where nothing loads `nvme-fabrics` (`shutdown-discoverd`), and without
 `_netdev` they disconnect before the unmount: `no available path -
 failing I/O` (`shutdown-discoverd-nofail`, #4332 case B).
 
-Three of them are fixed, all in nvme-cli branch `autoconnect-fixes`:
+Three of them are fixed, all in nvme-cli#4405 (lab tree `pr-4405`):
 `nvmf-autoconnect.service` wants `network-online.target`, and it
 disconnects its controllers when it stops, after the `_netdev` unmounts
 and before the network; `nvme-discoverd.service` loads `nvme-fabrics`.
@@ -477,7 +477,7 @@ disconnect runs before the unmount. NetworkManager leaves `eth0` up at
 the shutdown: `shutdown-nm-netdev` passes everywhere,
 `shutdown-nm-nofail` fails as with ifupdown.
 
-The same branch makes the legacy units step aside while nvme-discoverd
+The same PR makes the legacy units step aside while nvme-discoverd
 runs (nvme-cli#4327, #4329): `shutdown-legacy-units` installs both and
 checks with `probe_units` that `nvmf-autoconnect`, `nvmf-connect@`,
 `nvmf-connect-nbft` and `nvmefc-boot-connections` skip themselves
