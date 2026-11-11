@@ -5,7 +5,6 @@
 name = "pre-OS NBFT boot over a VLAN, networkd, no rename"
 tags = ["pre-os", "nbft", "nvme-cli-3", "vlan"]
 
-xfail_on = { "review-preos" = "libnvme reads every interface as VLAN 0 (get_vlan_id), the HFI gets no host_iface: nvme-cli branch nbft-vlan-id" }
 
 [boot]
 nbft = true
