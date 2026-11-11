@@ -68,6 +68,8 @@ def handover_kind(s):
 
 
 def flavor(s):
+    if s.guest.get('legacy_units'):
+        return 'both'
     if handover_kind(s) or s.guest.get('connect') == 'discoverd':
         return 'discoverd'
     return 'legacy'
@@ -131,6 +133,10 @@ def run(cfg, host, s, tree, slot, env, name, out, module=None):
         image.append('--wait-online')
     if g.get('modules_load'):
         image.append('--modules-load')
+    if g.get('legacy_units'):
+        image.append('--legacy-units')
+    if g.get('probe_units'):
+        image += ['--probe-units', ' '.join(g['probe_units'])]
     done = remote.run(cfg, host, image)
     if done.returncode:
         log = remote.run(cfg, host, f'tail -20 {shlex.quote(outdir)}/log',
@@ -186,9 +192,31 @@ def verdict(s, facts):
         problems.append(f'console: {line}')
     if len(facts['error']) > 3:
         problems.append(f"and {len(facts['error']) - 3} more such lines")
+    problems += probe_problems(s, facts)
     want = s.expect.get('result', 'pass')
     if want == 'fail':
         return [] if problems else ['the shutdown worked, expected it not to']
+    return problems
+
+
+def probe_problems(s, facts):
+    """The guest.probe_units whose Result= in the guest's report (lines
+    'probe UNIT result=RESULT') is not the expected one ('!RESULT': any
+    other)."""
+    got = {}
+    for line in facts['guest']:
+        words = line.split()
+        if len(words) == 3 and words[0] == 'probe' and \
+                words[2].startswith('result='):
+            got[words[1]] = words[2][len('result='):]
+    problems = []
+    for unit, want in s.guest.get('probe_units', {}).items():
+        if unit not in got:
+            problems.append(f'{unit}: no probe result from the guest')
+        elif want.startswith('!') and got[unit] == want[1:]:
+            problems.append(f'{unit}: Result={got[unit]}, expected another')
+        elif not want.startswith('!') and got[unit] != want:
+            problems.append(f'{unit}: Result={got[unit]}, expected {want}')
     return problems
 
 

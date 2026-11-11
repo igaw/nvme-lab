@@ -9,6 +9,7 @@
 #                  --fstab OPTIONS [--lvm2] [--wait-online]
 #                  [--uptime SECONDS] [--dirty-mb MB] [--modules-load]
 #                  [--network ifupdown|networkmanager]
+#                  [--legacy-units] [--probe-units "UNIT..."]
 #
 # --base     guest-base.sh's directory
 # --out      the case's results directory: gets disk.qcow2 and log
@@ -28,6 +29,15 @@
 # --network  who configures eth0: ifupdown's networking.service, as on a
 #            Debian server (default), or NetworkManager, as on Fedora,
 #            RHEL, SLE and Debian desktops
+# --legacy-units  with --connect discoverd: enable the legacy autoconnect
+#            units too (nvmf-autoconnect.service,
+#            nvmefc-boot-connections.service), as a host has them with
+#            -Dnvmf-autoconnect=enabled or left over from an old package
+# --probe-units  once mounted, start each UNIT (nvmf-connect@,
+#            nvmf-connect-nbft, nvmefc-boot-connections; nvmf-autoconnect
+#            is only read, it ran at boot) with its Condition*= lifted by
+#            a drop-in, and report "probe UNIT result=RESULT" (Result=;
+#            exec-condition: its ExecCondition= skipped it)
 # --uptime   seconds the guest waits with the mount before it powers off
 # --dirty-mb data the guest writes to /srv/data and keeps in the page
 #            cache (default 256): the unmount writes it back, which takes
@@ -41,8 +51,8 @@ set -eu
 
 BASE='' OUT='' NBD='' HOSTNQN='' HOSTID='' NVME='' CONNECT='' CONFIG=''
 TARGET='' DATA_UUID='' FSTAB='' LVM2='' WAIT_ONLINE='' MODULES_LOAD='' UPTIME=5 DIRTY_MB=256
-NETWORK=ifupdown
-usage() { sed -n '5,10p' "$0" >&2; exit 2; }
+NETWORK=ifupdown LEGACY_UNITS='' PROBE_UNITS=''
+usage() { sed -n '5,12p' "$0" >&2; exit 2; }
 while [ $# -gt 0 ]; do
     case $1 in
         --base) BASE=$2; shift ;;
@@ -59,6 +69,8 @@ while [ $# -gt 0 ]; do
         --lvm2) LVM2=1 ;;
         --wait-online) WAIT_ONLINE=1 ;;
         --modules-load) MODULES_LOAD=1 ;;
+        --legacy-units) LEGACY_UNITS=1 ;;
+        --probe-units) PROBE_UNITS=$2; shift ;;
         --network) NETWORK=$2; shift ;;
         --uptime) UPTIME=$2; shift ;;
         --dirty-mb) DIRTY_MB=$2; shift ;;
@@ -188,8 +200,14 @@ case $CONNECT in
     discoverd)
         systemctl --root="$MNT" enable nvme-discoverd.service \
             || fail "no nvme-discoverd.service"
-        systemctl --root="$MNT" disable nvmf-autoconnect.service 2>/dev/null \
-            || true ;;
+        if [ -n "$LEGACY_UNITS" ]; then
+            systemctl --root="$MNT" enable nvmf-autoconnect.service \
+                nvmefc-boot-connections.service \
+                || fail "no legacy autoconnect units"
+        else
+            systemctl --root="$MNT" disable nvmf-autoconnect.service \
+                2>/dev/null || true
+        fi ;;
     *) fail "bad --connect $CONNECT" ;;
 esac
 echo "now:"
@@ -281,6 +299,7 @@ mark "mounted"
              networking.service lvm2-monitor.service; do
         echo "unit \$u \$(systemctl is-active \$u)"
     done
+    [ ! -x /usr/local/sbin/lab-probe-units ] || /usr/local/sbin/lab-probe-units
     echo LAB-GUEST-STATE-END
 } > /dev/ttyS0
 # Data the unmount has to write back: no writeback before it
@@ -293,6 +312,45 @@ mark "poweroff"
 systemctl poweroff --no-block
 EOF
 chmod +x "$MNT/usr/local/sbin/lab-shutdown"
+if [ -n "$PROBE_UNITS" ]; then
+    echo "== probe units: $PROBE_UNITS"
+    {
+        echo '#!/bin/sh'
+        echo "UNITS='$PROBE_UNITS'"
+        cat <<'PROBE'
+# Start each unit with its Condition*= lifted, report its Result= (nvme-lab).
+for name in $UNITS; do
+    case $name in
+        nvmf-connect@) tmpl=nvmf-connect@.service unit=nvmf-connect@lab.service ;;
+        *) tmpl=$name.service unit=$name.service ;;
+    esac
+    result=''
+    if [ "$name" != nvmf-autoconnect ]; then
+        mkdir -p "/run/systemd/system/$tmpl.d"
+        printf '[Unit]\nConditionPathExists=\nConditionDirectoryNotEmpty=\n' \
+            > "/run/systemd/system/$tmpl.d/lab-probe.conf"
+        systemctl daemon-reload
+        cursor=$(journalctl --show-cursor -n 1 -q -o cat | sed -n 's/^-- cursor: //p')
+        systemctl start "$unit" 2>&1 | sed "s/^/probe-log $name: /"
+        sleep 2
+        # An unreferenced unit is unloaded once inactive, and then
+        # Result= reads "success": take it from this start's journal.
+        result=$(journalctl --after-cursor "$cursor" -u "$unit" -o cat \
+            | sed -n -e "s/.*Skipped due to '\(.*\)'.*/\1/p" \
+                  -e "s/.*Failed with result '\(.*\)'.*/\1/p" | tail -1)
+    fi
+    [ -n "$result" ] || result=$(systemctl show -P Result "$unit")
+    echo "probe $name result=$result"
+    journalctl -b --no-pager -o cat -u "$unit" 2>&1 | tail -8 \
+        | sed "s/^/probe-log $name: /"
+    rm -rf "/run/systemd/system/$tmpl.d"
+done
+systemctl daemon-reload
+PROBE
+    } > "$MNT/usr/local/sbin/lab-probe-units"
+    chmod +x "$MNT/usr/local/sbin/lab-probe-units"
+    cat "$MNT/usr/local/sbin/lab-probe-units"
+fi
 cat > "$MNT/etc/systemd/system/lab-shutdown.service" <<'EOF'
 [Unit]
 Description=nvme-lab: wait for /srv/data, then power off

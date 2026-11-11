@@ -7,13 +7,14 @@
 #
 # FLAVOR: legacy (nvme-cli 3 without nvme-discoverd, so with the
 # autoconnect units; nvme-cli 2 has nothing else) or discoverd (nvme-cli 3
-# with nvme-discoverd). Builds in TREE/.lab-debian-FLAVOR and installs
+# with nvme-discoverd) or both (nvme-discoverd and the legacy
+# autoconnect units, -Dnvmf-autoconnect=enabled). Builds in TREE/.lab-debian-FLAVOR and installs
 # with DESTDIR to TREE/.lab-debian-FLAVOR-stage, which guest-image.sh
 # copies into the guest. nvme-cli 2 builds its own libnvme, as in
 # boot.sh.
 set -eu
 
-[ $# -eq 2 ] || { echo "usage: $0 TREE legacy|discoverd" >&2; exit 2; }
+[ $# -eq 2 ] || { echo "usage: $0 TREE legacy|discoverd|both" >&2; exit 2; }
 TREE=$1 FLAVOR=$2
 BUILD=$TREE/.lab-debian-$FLAVOR STAGE=$TREE/.lab-debian-$FLAVOR-stage
 
@@ -22,10 +23,11 @@ OPTS=''
 if grep -q "'nvme-discoverd'" "$TREE/meson_options.txt" 2>/dev/null; then
     case $FLAVOR in
         discoverd) OPTS='-Dnvme-discoverd=enabled' ;;
+        both) OPTS='-Dnvme-discoverd=enabled -Dnvmf-autoconnect=enabled' ;;
         legacy) OPTS='-Dnvme-discoverd=disabled' ;;
         *) echo "bad flavor $FLAVOR" >&2; exit 2 ;;
     esac
-elif [ "$FLAVOR" = discoverd ]; then
+elif [ "$FLAVOR" != legacy ]; then
     echo "$TREE has no nvme-discoverd" >&2
     exit 2
 fi

@@ -7,9 +7,8 @@ name = "shutdown with an NVMe/TCP mount (nofail,_netdev), nvme-discoverd and lvm
 tags = ["shutdown", "guest", "lvm2", "nvme-cli-3", "discoverd"]
 
 [xfail_on]
-"v3.2" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch review/pre-os, the nvme-discoverd fixes)"
-"suite-master" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch review/pre-os, the nvme-discoverd fixes)"
-"autoconnect-fixes" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch review/pre-os, the nvme-discoverd fixes)"
+"v3.2" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch autoconnect-fixes)"
+"suite-master" = "nothing loads nvme-fabrics for nvme-discoverd's connection units: no mount (fixed by modprobe@nvme_fabrics in nvme-discoverd.service, branch autoconnect-fixes)"
 
 [guest]
 connect = "discoverd"

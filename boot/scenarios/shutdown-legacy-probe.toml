@@ -1,0 +1,12 @@
+# The counterpart of shutdown-legacy-units: the legacy autoconnect alone,
+# without nvme-discoverd. Its units must run as before, none may skip
+# itself through ExecCondition=. nvmf-autoconnect.service connects the
+# mount at boot; the probe starts the others with their path conditions
+# lifted (no FC HBA, no NBFT in the guest), so they run and fail.
+name = "the legacy autoconnect units run without nvme-discoverd"
+tags = ["shutdown", "guest", "nvme-cli-3", "legacy-units"]
+
+[guest]
+connect = "autoconnect"
+fstab = "nofail,_netdev"
+probe_units = { "nvmf-autoconnect" = "success", "nvmf-connect@" = "!exec-condition", "nvmf-connect-nbft" = "!exec-condition", "nvmefc-boot-connections" = "!exec-condition" }

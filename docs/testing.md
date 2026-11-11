@@ -431,7 +431,17 @@ Scenario keys: `connect` (`autoconnect`, `discoverd`), `config`
 `dirty_mb`, `shutdown_limit`, `timeout`, and `network`: `ifupdown`
 (default) or `networkmanager` (NetworkManager with a keyfile for `eth0`
 and `NetworkManager-wait-online`, as on Fedora, RHEL and SLE; a
-dispatcher script logs the same `LAB-EVENT ifdown-*` steps).
+dispatcher script logs the same `LAB-EVENT ifdown-*` steps),
+`legacy_units` (with `connect = "discoverd"`: also build with
+`-Dnvmf-autoconnect=enabled` and enable `nvmf-autoconnect.service` and
+`nvmefc-boot-connections.service`, the guest build flavor `both`), and
+`probe_units`: once mounted, the guest starts each named unit
+(`nvmf-connect@`, `nvmf-connect-nbft`, `nvmefc-boot-connections`; for
+`nvmf-autoconnect` it only reads the boot's result) with its
+`Condition*=` lifted by a drop-in, as the guest has no FC HBA and no
+NBFT, and reports its `Result=`. The value must match, `exec-condition`
+meaning the unit's `ExecCondition=` skipped it; `!VALUE` means any
+other.
 
 What they found (2026-11-09, nvme-cli 2.8 to master and Debian's 2.13,
 as `xfail` in the scenarios): with `_netdev` the shutdown is clean
@@ -448,20 +458,25 @@ where nothing loads `nvme-fabrics` (`shutdown-discoverd`), and without
 `_netdev` they disconnect before the unmount: `no available path -
 failing I/O` (`shutdown-discoverd-nofail`, #4332 case B).
 
-Three of them are fixed. The legacy autoconnect path (the udev rule
-and `nvmf-autoconnect.service`), nvme-cli branch `autoconnect-fixes`:
-the unit wants `network-online.target`, and it disconnects its
-controllers when it stops, after the `_netdev` unmounts and before the
-network. nvme-discoverd, in the nvme-discoverd fixes at the start of
-branch `review/pre-os` (the pre-OS series stacks on top):
-`nvme-discoverd.service` loads `nvme-fabrics`. `shutdown-lvm2` and
-`shutdown-discoverd` pass with them; they stay expected failures on the
+Three of them are fixed, all in nvme-cli branch `autoconnect-fixes`:
+`nvmf-autoconnect.service` wants `network-online.target`, and it
+disconnects its controllers when it stops, after the `_netdev` unmounts
+and before the network; `nvme-discoverd.service` loads `nvme-fabrics`.
+`shutdown-lvm2` and `shutdown-discoverd` pass with them; they stay expected failures on the
 releases, Debian's package and `suite-master` (`xfail_on`, which names a
 tree by its release tag, its name or `package`). A mount without
 `_netdev` is not supported: with the fixes it connects, and the
 disconnect runs before the unmount. NetworkManager leaves `eth0` up at
 the shutdown: `shutdown-nm-netdev` passes everywhere,
 `shutdown-nm-nofail` fails as with ifupdown.
+
+The same branch makes the legacy units step aside while nvme-discoverd
+runs (nvme-cli#4327, #4329): `shutdown-legacy-units` installs both and
+checks with `probe_units` that `nvmf-autoconnect`, `nvmf-connect@`,
+`nvmf-connect-nbft` and `nvmefc-boot-connections` skip themselves
+through `ExecCondition=`; `shutdown-legacy-probe` checks that they still
+run without nvme-discoverd. The probe tests the units' conditions under
+the guest's systemd, not the FC and NBFT events that start them.
 
 #### Hand-over (a Debian root on NVMe-oF, nvme-cli#4328)
 

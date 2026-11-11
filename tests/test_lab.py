@@ -877,6 +877,27 @@ class ScenarioTest(unittest.TestCase):
         self.assertTrue(scenario.applies(
             tagged, boot.scenario_major(v3, tagged)))
 
+    def test_guest_probe_units(self):
+        s = scenario.load(self.write(
+            '[guest]\nconnect = "discoverd"\nlegacy_units = true\n'
+            'probe_units = { "nvmf-connect@" = "exec-condition", '
+            '"nvmefc-boot-connections" = "!exec-condition", '
+            '"nvmf-connect-nbft" = "exec-condition" }\n'))
+        self.assertEqual(guest.flavor(s), 'both')
+        facts = guest.parse_state(
+            'mounted yes\npoweroff yes\npowered_off yes\n'
+            'shutdown_seconds 4\n'
+            'guest probe nvmf-connect@ result=exec-condition\n'
+            'guest probe nvmefc-boot-connections result=exec-condition\n')
+        self.assertEqual(guest.verdict(s, facts), [
+            'nvmefc-boot-connections: Result=exec-condition, expected '
+            'another',
+            'nvmf-connect-nbft: no probe result from the guest'])
+        with self.assertRaisesRegex(ConfigError, 'legacy_units'):
+            scenario.load(self.write('[guest]\nlegacy_units = true\n'))
+        with self.assertRaisesRegex(ConfigError, "unknown unit 'x'"):
+            scenario.load(self.write('[guest]\nprobe_units = { x = "y" }\n'))
+
     def test_guest_verdict(self):
         s = scenario.load(self.write('[guest]\nshutdown_limit = 10\n'))
         facts = guest.parse_state(self.GUEST_STATE)

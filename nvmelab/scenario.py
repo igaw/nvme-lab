@@ -92,6 +92,13 @@ the way a user sets it up, and powers off:
     dirty_mb = 256              # data the unmount has to write back
     shutdown_limit = 60         # seconds the power-off may take
     timeout = 300               # QEMU is killed after this
+    legacy_units = true         # with connect = "discoverd": also build
+                                # and enable the legacy autoconnect units
+    probe_units = { "nvmf-connect@" = "exec-condition" }
+                                # once mounted, start each unit with its
+                                # Condition*= lifted; its Result= must be
+                                # the value (exec-condition: skipped by
+                                # ExecCondition=; "!VALUE": any other)
 
 It passes when the guest mounted the file system and powered off within
 shutdown_limit, without a sign of a broken shutdown on the console (see
@@ -146,7 +153,10 @@ GUEST_KEYS = {'connect': str, 'config': str, 'fstab': str, 'lvm2': bool,
               'wait_online': bool, 'modules_load': bool, 'dirty_mb': int,
               'uptime': int, 'shutdown_limit': int, 'timeout': int,
               'root': str, 'paths': int, 'lose': bool, 'restart': bool,
-              'network': str}
+              'network': str, 'legacy_units': bool, 'probe_units': dict}
+# The units guest.probe_units may start, by the name the guest reports
+GUEST_PROBE_UNITS = ('nvmf-connect@', 'nvmf-connect-nbft',
+                     'nvmefc-boot-connections', 'nvmf-autoconnect')
 GUEST_NETWORK = ('ifupdown', 'networkmanager')
 GUEST_ROOT = ('local', 'nvme', 'fc')
 GUEST_CONNECT = ('autoconnect', 'discoverd')
@@ -226,6 +236,14 @@ def load(path):
         if s.guest.get('config', GUEST_CONFIG[0]) not in GUEST_CONFIG:
             raise ConfigError(f"{path}: guest.config must be one of "
                               f"{', '.join(GUEST_CONFIG)}")
+        if s.guest.get('legacy_units') and \
+                s.guest.get('connect') != 'discoverd':
+            raise ConfigError(f'{path}: guest.legacy_units goes with '
+                              'connect = "discoverd"')
+        for unit in s.guest.get('probe_units', {}):
+            if unit not in GUEST_PROBE_UNITS:
+                raise ConfigError(f"{path}: guest.probe_units: unknown unit "
+                                  f"'{unit}' ({', '.join(GUEST_PROBE_UNITS)})")
         if s.boot or data.get('fault') or set(s.expect) - {'result'}:
             raise ConfigError(f'{path}: a [guest] scenario has no [boot], '
                               '[[fault]] or [expect] other than result')
